@@ -6,6 +6,8 @@
     "dev": "node --watch index.js",
     "start": "nodemon index.js",
      "postinstall": "node setup.js"
+   "postinstall": "node scripts/postinstall.js",
+    "start": "nodemon index.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
