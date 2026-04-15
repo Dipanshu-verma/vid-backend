@@ -616,7 +616,6 @@ async function getVideoInfoViaYtDlp(url, platform) {
   }
 
   const title = raw.title || 'Untitled Video';
-  const API = process.env.API_BASE_URL || 'http://localhost:3001';
   const qualities = buildQualities(raw.formats || [], url, title, API);
 
   return {
