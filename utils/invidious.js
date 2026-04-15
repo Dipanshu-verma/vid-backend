@@ -1,8 +1,8 @@
-// Invidious is an open-source YouTube frontend with public instances.
-// Their servers handle YouTube auth — we just call their API.
-// We maintain a list of instances and rotate through them on failure.
+// Two separate YouTube frontends as fallback layers:
+// 1. Invidious — races all instances in parallel, takes first winner
+// 2. Piped    — different infrastructure, separate fallback if Invidious fails
 
-const INSTANCES = [
+const INVIDIOUS_INSTANCES = [
   'https://invidious.privacydev.net',
   'https://inv.nadeko.net',
   'https://invidious.nikkosphere.com',
@@ -10,6 +10,20 @@ const INSTANCES = [
   'https://invidious.fdn.fr',
   'https://iv.melmac.space',
   'https://invidious.perennialte.ch',
+  'https://invidious.io.lol',
+  'https://yewtu.be',
+  'https://invidious.flokinet.to',
+  'https://invidious.tiekoetter.com',
+  'https://inv.tux.pizza',
+];
+
+// Piped is a separate YouTube frontend with different instances/infra
+const PIPED_INSTANCES = [
+  'https://pipedapi.kavin.rocks',
+  'https://pipedapi.in.projectsegfau.lt',
+  'https://piped-api.privacy.com.de',
+  'https://api.piped.yt',
+  'https://pipedapi.adminforge.de',
 ];
 
 function extractVideoId(url) {
@@ -45,32 +59,32 @@ function getQualityLabel(height) {
   return `${height}p`;
 }
 
-async function fetchFromInstance(instance, videoId) {
-  const res = await fetch(`${instance}/api/v1/videos/${videoId}?fields=title,author,lengthSeconds,videoThumbnails,adaptiveFormats,formatStreams`, {
-    signal: AbortSignal.timeout(10000),
-    headers: { 'User-Agent': 'Mozilla/5.0' },
+// ── Invidious ─────────────────────────────────────────────────────────────────
+
+async function fetchInvidious(instance, videoId) {
+  const url = `${instance}/api/v1/videos/${videoId}?fields=title,author,lengthSeconds,videoThumbnails,adaptiveFormats,formatStreams`;
+  const res = await fetch(url, {
+    signal: AbortSignal.timeout(8000),
+    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; vidsave/1.0)' },
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status} from ${instance}`);
-  return res.json();
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  // Validate we actually got formats
+  if (!data?.adaptiveFormats?.length && !data?.formatStreams?.length) {
+    throw new Error('No formats in response');
+  }
+  return { instance, data };
 }
 
-function buildQualities(data, instance, videoId, API) {
+function buildInvidiousQualities(data, instance, API) {
   const streamBase = `${API}/api/stream`;
   const qualities = [];
 
-  // adaptiveFormats = separate video + audio streams (higher quality, up to 4K)
-  const videoFormats = (data.adaptiveFormats || []).filter(f =>
-    f.type?.startsWith('video') && f.url && f.height
-  );
-  const audioFormats = (data.adaptiveFormats || []).filter(f =>
-    f.type?.startsWith('audio') && f.url
-  );
+  const videoFormats = (data.adaptiveFormats || []).filter(f => f.type?.startsWith('video') && f.url && f.height);
+  const audioFormats = (data.adaptiveFormats || []).filter(f => f.type?.startsWith('audio') && f.url);
 
-  // Pick best audio (highest bitrate m4a/mp4 preferred)
-  const bestAudio = audioFormats
-    .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))[0];
+  const bestAudio = audioFormats.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))[0];
 
-  // Deduplicate video formats by height — keep highest bitrate per height
   const heightMap = new Map();
   for (const f of videoFormats) {
     const existing = heightMap.get(f.height);
@@ -83,15 +97,12 @@ function buildQualities(data, instance, videoId, API) {
 
   for (const height of heights) {
     const vfmt = heightMap.get(height);
-    const totalBytes = (vfmt.contentLength || 0) + (bestAudio?.contentLength || 0);
-
-    // Pass video + audio URLs directly to /api/stream — no yt-dlp needed
+    const totalBytes = (parseInt(vfmt.contentLength) || 0) + (parseInt(bestAudio?.contentLength) || 0);
     const params = new URLSearchParams({
       videoUrl: vfmt.url,
       audioUrl: bestAudio?.url || '',
       title: data.title || 'video',
     });
-
     qualities.push({
       label: getQualityLabel(height),
       url: `${streamBase}?${params.toString()}`,
@@ -101,27 +112,16 @@ function buildQualities(data, instance, videoId, API) {
     });
   }
 
-  // formatStreams = combined video+audio (up to 720p, simpler)
-  // Use as fallback if no adaptive formats found
+  // Combined stream fallback (up to 720p)
   if (qualities.length === 0) {
-    const combined = (data.formatStreams || [])
-      .filter(f => f.url && f.resolution)
-      .sort((a, b) => (parseInt(b.resolution) || 0) - (parseInt(a.resolution) || 0));
-
-    for (const fmt of combined) {
+    for (const fmt of (data.formatStreams || []).filter(f => f.url && f.resolution)) {
       const height = parseInt(fmt.resolution) || 0;
-      const params = new URLSearchParams({
-        videoUrl: fmt.url,
-        audioUrl: '',
-        title: data.title || 'video',
-      });
-
+      const params = new URLSearchParams({ videoUrl: fmt.url, audioUrl: '', title: data.title || 'video' });
       qualities.push({
         label: getQualityLabel(height) || fmt.resolution,
         url: `${streamBase}?${params.toString()}`,
         ext: 'mp4',
         resolution: fmt.resolution,
-        size: formatSize(fmt.contentLength || 0),
       });
     }
   }
@@ -129,45 +129,154 @@ function buildQualities(data, instance, videoId, API) {
   return qualities;
 }
 
+// Race all Invidious instances — whichever responds first and has formats wins
+async function getFromInvidious(videoId, API) {
+  console.log(`[invidious] racing ${INVIDIOUS_INSTANCES.length} instances...`);
+
+  const result = await Promise.any(
+    INVIDIOUS_INSTANCES.map(instance =>
+      fetchInvidious(instance, videoId)
+        .then(r => {
+          console.log(`[invidious] winner: ${instance}`);
+          return r;
+        })
+        .catch(e => {
+          console.log(`[invidious] ${instance}: ${e.message?.slice(0, 60)}`);
+          throw e;
+        })
+    )
+  );
+
+  return result;
+}
+
+// ── Piped ─────────────────────────────────────────────────────────────────────
+
+async function fetchPiped(instance, videoId) {
+  const res = await fetch(`${instance}/streams/${videoId}`, {
+    signal: AbortSignal.timeout(8000),
+    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; vidsave/1.0)' },
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  if (!data?.videoStreams?.length && !data?.audioStreams?.length) {
+    throw new Error('No streams in response');
+  }
+  return { instance, data };
+}
+
+function buildPipedQualities(data, API) {
+  const streamBase = `${API}/api/stream`;
+  const qualities = [];
+
+  const videoStreams = (data.videoStreams || []).filter(s => s.url && s.height && !s.videoOnly === false || s.url && s.height);
+  const audioStreams = (data.audioStreams || []).filter(s => s.url);
+  const bestAudio = audioStreams.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))[0];
+
+  // Piped marks video-only streams with videoOnly=true
+  const videoOnly = videoStreams.filter(s => s.videoOnly);
+  const combined  = videoStreams.filter(s => !s.videoOnly);
+
+  const heightMap = new Map();
+  for (const f of [...videoOnly, ...combined]) {
+    const existing = heightMap.get(f.height);
+    if (!existing || (f.bitrate || 0) > (existing.bitrate || 0)) {
+      heightMap.set(f.height, f);
+    }
+  }
+
+  const heights = [...heightMap.keys()].sort((a, b) => b - a);
+
+  for (const height of heights) {
+    const vfmt = heightMap.get(height);
+    const audioUrl = vfmt.videoOnly ? (bestAudio?.url || '') : '';
+    const params = new URLSearchParams({
+      videoUrl: vfmt.url,
+      audioUrl,
+      title: data.title || 'video',
+    });
+    qualities.push({
+      label: getQualityLabel(height),
+      url: `${streamBase}?${params.toString()}`,
+      ext: 'mp4',
+      resolution: `${height}p`,
+    });
+  }
+
+  return qualities;
+}
+
+async function getFromPiped(videoId, API) {
+  console.log(`[piped] racing ${PIPED_INSTANCES.length} instances...`);
+
+  const result = await Promise.any(
+    PIPED_INSTANCES.map(instance =>
+      fetchPiped(instance, videoId)
+        .then(r => {
+          console.log(`[piped] winner: ${instance}`);
+          return r;
+        })
+        .catch(e => {
+          console.log(`[piped] ${instance}: ${e.message?.slice(0, 60)}`);
+          throw e;
+        })
+    )
+  );
+
+  return result;
+}
+
+// ── Public export ─────────────────────────────────────────────────────────────
+
 export async function getVideoInfoFromInvidious(url) {
   const videoId = extractVideoId(url);
   if (!videoId) throw new Error('Could not extract video ID from URL');
 
   const API = process.env.API_BASE_URL || 'http://localhost:3001';
-  let lastError;
 
-  for (const instance of INSTANCES) {
-    try {
-      console.log(`[invidious] trying: ${instance}`);
-      const data = await fetchFromInstance(instance, videoId);
+  // Try Invidious first (races all instances in parallel)
+  try {
+    const { instance, data } = await getFromInvidious(videoId, API);
+    const thumbnail = (data.videoThumbnails || [])
+      .sort((a, b) => (b.width || 0) - (a.width || 0))[0]?.url;
+    const qualities = buildInvidiousQualities(data, instance, API);
 
-      const thumbnail = (data.videoThumbnails || [])
-        .sort((a, b) => (b.width || 0) - (a.width || 0))[0]?.url;
+    if (qualities.length === 0) throw new Error('Invidious returned no usable formats');
 
-      const qualities = buildQualities(data, instance, videoId, API);
-
-      if (qualities.length === 0) {
-        console.warn(`[invidious] ${instance} returned no usable formats`);
-        continue;
-      }
-
-      console.log(`[invidious] success: ${instance} | qualities: ${qualities.length}`);
-
-      return {
-        platform: 'youtube',
-        title: data.title || 'Untitled Video',
-        thumbnail: thumbnail?.startsWith('http') ? thumbnail : `${instance}${thumbnail}`,
-        author: data.author || undefined,
-        duration: formatDuration(data.lengthSeconds),
-        qualities,
-        _source: 'invidious',
-      };
-
-    } catch (err) {
-      lastError = err;
-      console.error(`[invidious] ${instance} failed:`, err.message?.slice(0, 100));
-    }
+    return {
+      platform: 'youtube',
+      title: data.title || 'Untitled Video',
+      thumbnail: thumbnail?.startsWith('http') ? thumbnail : thumbnail ? `${instance}${thumbnail}` : undefined,
+      author: data.author || undefined,
+      duration: formatDuration(data.lengthSeconds),
+      qualities,
+      _source: 'invidious',
+    };
+  } catch (invErr) {
+    console.warn('[invidious] all instances failed:', invErr?.errors?.map(e => e.message)?.join(', ') || invErr.message);
   }
 
-  throw new Error(`All Invidious instances failed: ${lastError?.message || 'unknown'}`);
+  // Piped as second layer
+  console.log('[piped] trying as fallback...');
+  try {
+    const { data } = await getFromPiped(videoId, API);
+    const qualities = buildPipedQualities(data, API);
+
+    if (qualities.length === 0) throw new Error('Piped returned no usable streams');
+
+    const thumbnail = data.thumbnailUrl;
+
+    return {
+      platform: 'youtube',
+      title: data.title || 'Untitled Video',
+      thumbnail,
+      author: data.uploader || undefined,
+      duration: formatDuration(data.duration),
+      qualities,
+      _source: 'piped',
+    };
+  } catch (pipedErr) {
+    console.error('[piped] all instances failed:', pipedErr?.errors?.map(e => e.message)?.join(', ') || pipedErr.message);
+    throw new Error('All fallback sources (Invidious + Piped) failed');
+  }
 }
