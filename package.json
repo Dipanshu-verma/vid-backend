@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "node --watch index.js",
-    "start": "node index.js"
+   "postinstall": "node scripts/postinstall.js",
+  "start": "node server.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
