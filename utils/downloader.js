@@ -485,8 +485,6 @@ function cookiesArgs() {
   return existsSync(cookiesPath) ? ['--cookies', cookiesPath] : [];
 }
 
-// Merge player_client + optional po_token into single --extractor-args value
-// yt-dlp only honours the LAST --extractor-args per extractor key
 function buildExtractorArgs(playerClient, poToken) {
   let val = `youtube:player_client=${playerClient}`;
   if (poToken) val += `,po_token=${poToken}`;
@@ -535,8 +533,6 @@ function buildQualities(formats, url, title, API) {
   }
 
   const heights = [...heightMap.keys()].sort((a, b) => b - a);
-  console.log(`[info] heights=${heights.join(',')} | audio=${formatSize(bestAudioSize) || 'none'}`);
-
   const streamBase = `${API}/api/stream?url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}`;
 
   const qualities = [{
@@ -552,7 +548,6 @@ function buildQualities(formats, url, title, API) {
     const isCombined = vfmt.acodec && vfmt.acodec !== 'none';
     const videoSize = exactSize(vfmt);
     const totalSize = isCombined ? videoSize : (videoSize > 0 && bestAudioSize > 0 ? videoSize + bestAudioSize : videoSize);
-
     const formatSelector = isCombined
       ? `best[height<=${height}][ext=mp4]/best[height<=${height}]/best`
       : `bestvideo[height<=${height}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=${height}]+bestaudio/best[height<=${height}]/best`;
@@ -564,23 +559,6 @@ function buildQualities(formats, url, title, API) {
       resolution: vfmt.width ? `${vfmt.width}×${height}` : `${height}p`,
       size: formatSize(totalSize),
     });
-  }
-
-  if (heights.length === 0) {
-    const fallbacks = formats
-      .filter(f => f.url && !['m3u8', 'm3u8_native', 'hls'].includes(f.protocol))
-      .sort((a, b) => (b.tbr || 0) - (a.tbr || 0))
-      .slice(0, 5);
-
-    for (const [i, fmt] of fallbacks.entries()) {
-      qualities.push({
-        label: fmt.format_note || (i === 0 ? 'Best Quality' : `Option ${i + 1}`),
-        url: `${streamBase}&format=${encodeURIComponent(fmt.format_id || 'best')}`,
-        ext: fmt.ext || 'mp4',
-        resolution: fmt.width && fmt.height ? `${fmt.width}×${fmt.height}` : undefined,
-        size: formatSize(exactSize(fmt)),
-      });
-    }
   }
 
   return qualities;
@@ -608,20 +586,17 @@ async function getVideoInfoViaYtDlp(url, platform) {
           '--add-header', `user-agent:${attempt.ua}`,
           ...cookies,
         ];
-
-        console.log(`[yt-dlp] trying: ${attempt.name} | cookies=${cookies.length > 0}`);
+        console.log(`[yt-dlp] trying: ${attempt.name}`);
         raw = await ytDlp.getVideoInfo(args);
-        console.log(`[yt-dlp] success: ${attempt.name} | formats: ${raw.formats?.length || 0}`);
+        console.log(`[yt-dlp] ✓ success: ${attempt.name} | formats: ${raw.formats?.length || 0}`);
         break;
-
       } catch (err) {
         lastError = err;
         const msg = (err?.stderr || err?.message || '').toLowerCase();
-        console.error(`[yt-dlp] ${attempt.name} failed:`, (err?.stderr || err?.message || '').slice(0, 200));
+        console.error(`[yt-dlp] ✗ ${attempt.name}:`, msg.slice(0, 120));
         if (msg.includes('video unavailable') || msg.includes('private video') || msg.includes('has been removed')) break;
       }
     }
-
     if (!raw) throw new Error(lastError?.stderr || lastError?.message || 'All yt-dlp clients failed');
 
   } else {
@@ -635,17 +610,13 @@ async function getVideoInfoViaYtDlp(url, platform) {
     ];
 
     raw = await ytDlp.getVideoInfo([
-      url,
-      '--no-warnings',
-      '--no-playlist',
-      '--no-check-certificate',
-      '--skip-download',
-      ...extraHeaders,
-      ...cookies,
+      url, '--no-warnings', '--no-playlist', '--no-check-certificate', '--skip-download',
+      ...extraHeaders, ...cookies,
     ]);
   }
 
   const title = raw.title || 'Untitled Video';
+  const API = process.env.API_BASE_URL || 'http://localhost:3001';
   const qualities = buildQualities(raw.formats || [], url, title, API);
 
   return {
@@ -662,33 +633,35 @@ async function getVideoInfoViaYtDlp(url, platform) {
 export async function getVideoInfo(url) {
   const platform = detectPlatform(url);
 
-  // Non-YouTube: yt-dlp only (Invidious is YouTube-specific)
+  // Non-YouTube: yt-dlp only
   if (platform !== 'youtube') {
+    console.log(`[downloader] platform=${platform}, using yt-dlp`);
     return getVideoInfoViaYtDlp(url, platform);
   }
 
-  // YouTube: try yt-dlp first, fall back to Invidious
+  // YouTube: yt-dlp → Invidious → Piped
+  console.log('[downloader] YouTube detected, trying yt-dlp first...');
+
   try {
     const result = await getVideoInfoViaYtDlp(url, platform);
-    console.log('[downloader] yt-dlp succeeded');
+    console.log('[downloader] ✓ yt-dlp path succeeded');
     return result;
   } catch (ytDlpErr) {
     const msg = (ytDlpErr?.message || '').toLowerCase();
 
-    // Hard failures — Invidious won't help either
     if (msg.includes('private video') || msg.includes('has been removed') || msg.includes('video unavailable')) {
       throw ytDlpErr;
     }
 
-    console.warn('[downloader] yt-dlp failed, trying Invidious fallback...', ytDlpErr.message?.slice(0, 100));
+    console.warn('[downloader] ✗ yt-dlp failed, trying Invidious/Piped fallback...');
 
     try {
       const result = await getVideoInfoFromInvidious(url);
-      console.log('[downloader] Invidious succeeded');
+      console.log(`[downloader] ✓ fallback succeeded via ${result._source}`);
       return result;
-    } catch (invidiousErr) {
-      console.error('[downloader] Invidious also failed:', invidiousErr.message?.slice(0, 100));
-      // Throw the yt-dlp error as primary — it's more informative
+    } catch (fallbackErr) {
+      console.error('[downloader] ✗ all sources failed');
+      // Throw yt-dlp error — more informative for debugging
       throw ytDlpErr;
     }
   }
