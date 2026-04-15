@@ -1,8 +1,7 @@
-import YTDlpWrapModule from 'yt-dlp-wrap';
-const YTDlpWrap = YTDlpWrapModule.default ?? YTDlpWrapModule;
-import { mkdirSync, existsSync } from 'fs';
+import { mkdirSync, existsSync, chmodSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { execSync } from 'child_process';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const binDir = join(__dirname, '..', 'bin');
@@ -16,6 +15,10 @@ if (existsSync(binPath)) {
 }
 
 console.log('Downloading yt-dlp binary...');
-YTDlpWrap.downloadFromGithub(binPath)
-  .then(() => console.log('yt-dlp ready at', binPath))
-  .catch(err => { console.error('Failed to download yt-dlp:', err); process.exit(1); });
+
+const url = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp';
+
+execSync(`curl -L "${url}" -o "${binPath}"`, { stdio: 'inherit' });
+chmodSync(binPath, 0o755);
+
+console.log('yt-dlp ready at', binPath);
