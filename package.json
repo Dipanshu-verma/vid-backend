@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "node --watch index.js",
+   "postinstall": "node scripts/postinstall.js",
     "start": "nodemon index.js"
   },
   "dependencies": {
