@@ -425,7 +425,6 @@
 //   };
 // }
 
-
 import YTDlpWrapModule from 'yt-dlp-wrap';
 const YTDlpWrap = YTDlpWrapModule.default ?? YTDlpWrapModule;
 
@@ -433,6 +432,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync } from 'fs';
 import { detectPlatform } from './platform.js';
+import { getVideoInfoFromInvidious } from './invidious.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const isWin = process.platform === 'win32';
@@ -485,47 +485,21 @@ function cookiesArgs() {
   return existsSync(cookiesPath) ? ['--cookies', cookiesPath] : [];
 }
 
-// yt-dlp only honours LAST --extractor-args per extractor key.
-// Merge player_client + optional po_token into a single flag value.
+// Merge player_client + optional po_token into single --extractor-args value
+// yt-dlp only honours the LAST --extractor-args per extractor key
 function buildExtractorArgs(playerClient, poToken) {
   let val = `youtube:player_client=${playerClient}`;
   if (poToken) val += `,po_token=${poToken}`;
   return ['--extractor-args', val];
 }
 
-// Ordered by how well each works on datacenter IPs (Render / Railway / Fly etc.)
-// android_vr hits a separate InnerTube endpoint with minimal bot checks
 const YT_CLIENTS = [
-  {
-    name: 'android_vr',
-    client: 'android_vr',
-    ua: 'com.google.android.apps.youtube.vr.oculus/1.56.21 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip',
-  },
-  {
-    name: 'tv_embedded',
-    client: 'tv_embedded',
-    ua: 'Mozilla/5.0 (SMART-TV; Linux; Tizen 6.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/6.0 TV Safari/538.1',
-  },
-  {
-    name: 'mweb',
-    client: 'mweb',
-    ua: 'Mozilla/5.0 (Linux; Android 11; Pixel 5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.91 Mobile Safari/537.36',
-  },
-  {
-    name: 'ios',
-    client: 'ios',
-    ua: 'com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X;)',
-  },
-  {
-    name: 'android',
-    client: 'android',
-    ua: 'com.google.android.youtube/19.30.36 (Linux; U; Android 11) gzip',
-  },
-  {
-    name: 'web',
-    client: 'web',
-    ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  },
+  { name: 'android_vr',  client: 'android_vr',  ua: 'com.google.android.apps.youtube.vr.oculus/1.56.21 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip' },
+  { name: 'tv_embedded', client: 'tv_embedded',  ua: 'Mozilla/5.0 (SMART-TV; Linux; Tizen 6.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/6.0 TV Safari/538.1' },
+  { name: 'mweb',        client: 'mweb',         ua: 'Mozilla/5.0 (Linux; Android 11; Pixel 5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.91 Mobile Safari/537.36' },
+  { name: 'ios',         client: 'ios',          ua: 'com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X;)' },
+  { name: 'android',     client: 'android',      ua: 'com.google.android.youtube/19.30.36 (Linux; U; Android 11) gzip' },
+  { name: 'web',         client: 'web',          ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
 ];
 
 function buildQualities(formats, url, title, API) {
@@ -534,13 +508,11 @@ function buildQualities(formats, url, title, API) {
     (!f.acodec || f.acodec === 'none') &&
     !['m3u8', 'm3u8_native', 'hls'].includes(f.protocol)
   );
-
   const combined = formats.filter(f =>
     f.height && f.vcodec && f.vcodec !== 'none' &&
     f.acodec && f.acodec !== 'none' &&
     !['m3u8', 'm3u8_native', 'hls'].includes(f.protocol)
   );
-
   const audioOnly = formats.filter(f =>
     f.acodec && f.acodec !== 'none' &&
     (!f.vcodec || f.vcodec === 'none') &&
@@ -553,14 +525,12 @@ function buildQualities(formats, url, title, API) {
     ?? audioOnly.sort((a, b) => (b.abr || b.tbr || 0) - (a.abr || a.tbr || 0))[0];
 
   const bestAudioSize = exactSize(bestAudio);
-
   const heightMap = new Map();
+
   for (const f of [...videoOnly, ...combined]) {
     const existing = heightMap.get(f.height);
     const fScore = (f.ext === 'mp4' ? 100000 : 0) + (f.tbr || f.vbr || 0);
-    const eScore = existing
-      ? (existing.ext === 'mp4' ? 100000 : 0) + (existing.tbr || existing.vbr || 0)
-      : -1;
+    const eScore = existing ? (existing.ext === 'mp4' ? 100000 : 0) + (existing.tbr || existing.vbr || 0) : -1;
     if (fScore > eScore) heightMap.set(f.height, f);
   }
 
@@ -581,9 +551,7 @@ function buildQualities(formats, url, title, API) {
     const vfmt = heightMap.get(height);
     const isCombined = vfmt.acodec && vfmt.acodec !== 'none';
     const videoSize = exactSize(vfmt);
-    const totalSize = isCombined
-      ? videoSize
-      : (videoSize > 0 && bestAudioSize > 0 ? videoSize + bestAudioSize : videoSize);
+    const totalSize = isCombined ? videoSize : (videoSize > 0 && bestAudioSize > 0 ? videoSize + bestAudioSize : videoSize);
 
     const formatSelector = isCombined
       ? `best[height<=${height}][ext=mp4]/best[height<=${height}]/best`
@@ -618,9 +586,8 @@ function buildQualities(formats, url, title, API) {
   return qualities;
 }
 
-export async function getVideoInfo(url) {
+async function getVideoInfoViaYtDlp(url, platform) {
   const ytDlp = getYtDlp();
-  const platform = detectPlatform(url);
   const API = process.env.API_BASE_URL || 'http://localhost:3001';
   const poToken = process.env.YT_PO_TOKEN || null;
   const cookies = cookiesArgs();
@@ -637,12 +604,12 @@ export async function getVideoInfo(url) {
           '--no-playlist',
           '--no-check-certificate',
           '--skip-download',
-          ...buildExtractorArgs(attempt.client, poToken),  // single merged --extractor-args
+          ...buildExtractorArgs(attempt.client, poToken),
           '--add-header', `user-agent:${attempt.ua}`,
           ...cookies,
         ];
 
-        console.log(`[yt-dlp] trying: ${attempt.name} | cookies=${cookies.length > 0} | poToken=${!!poToken}`);
+        console.log(`[yt-dlp] trying: ${attempt.name} | cookies=${cookies.length > 0}`);
         raw = await ytDlp.getVideoInfo(args);
         console.log(`[yt-dlp] success: ${attempt.name} | formats: ${raw.formats?.length || 0}`);
         break;
@@ -650,17 +617,12 @@ export async function getVideoInfo(url) {
       } catch (err) {
         lastError = err;
         const msg = (err?.stderr || err?.message || '').toLowerCase();
-        console.error(`[yt-dlp] ${attempt.name} failed:`, (err?.stderr || err?.message || '').slice(0, 300));
-
-        if (
-          msg.includes('video unavailable') ||
-          msg.includes('private video') ||
-          msg.includes('has been removed')
-        ) break; // No point retrying — these won't change across clients
+        console.error(`[yt-dlp] ${attempt.name} failed:`, (err?.stderr || err?.message || '').slice(0, 200));
+        if (msg.includes('video unavailable') || msg.includes('private video') || msg.includes('has been removed')) break;
       }
     }
 
-    if (!raw) throw new Error(lastError?.stderr || lastError?.message || 'All YouTube clients failed');
+    if (!raw) throw new Error(lastError?.stderr || lastError?.message || 'All yt-dlp clients failed');
 
   } else {
     const extraHeaders = ['instagram', 'facebook'].includes(platform) ? [
@@ -672,24 +634,19 @@ export async function getVideoInfo(url) {
       '--add-header', 'user-agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
     ];
 
-    try {
-      raw = await ytDlp.getVideoInfo([
-        url,
-        '--no-warnings',
-        '--no-playlist',
-        '--no-check-certificate',
-        '--skip-download',
-        ...extraHeaders,
-        ...cookies,
-      ]);
-    } catch (err) {
-      throw new Error(err?.stderr || err?.message || String(err));
-    }
+    raw = await ytDlp.getVideoInfo([
+      url,
+      '--no-warnings',
+      '--no-playlist',
+      '--no-check-certificate',
+      '--skip-download',
+      ...extraHeaders,
+      ...cookies,
+    ]);
   }
 
   const title = raw.title || 'Untitled Video';
-  const formats = raw.formats || [];
-  const qualities = buildQualities(formats, url, title, API);
+  const qualities = buildQualities(raw.formats || [], url, title, API);
 
   return {
     platform,
@@ -698,5 +655,41 @@ export async function getVideoInfo(url) {
     author: raw.uploader || raw.channel || raw.creator || undefined,
     duration: formatDuration(raw.duration),
     qualities,
+    _source: 'ytdlp',
   };
+}
+
+export async function getVideoInfo(url) {
+  const platform = detectPlatform(url);
+
+  // Non-YouTube: yt-dlp only (Invidious is YouTube-specific)
+  if (platform !== 'youtube') {
+    return getVideoInfoViaYtDlp(url, platform);
+  }
+
+  // YouTube: try yt-dlp first, fall back to Invidious
+  try {
+    const result = await getVideoInfoViaYtDlp(url, platform);
+    console.log('[downloader] yt-dlp succeeded');
+    return result;
+  } catch (ytDlpErr) {
+    const msg = (ytDlpErr?.message || '').toLowerCase();
+
+    // Hard failures — Invidious won't help either
+    if (msg.includes('private video') || msg.includes('has been removed') || msg.includes('video unavailable')) {
+      throw ytDlpErr;
+    }
+
+    console.warn('[downloader] yt-dlp failed, trying Invidious fallback...', ytDlpErr.message?.slice(0, 100));
+
+    try {
+      const result = await getVideoInfoFromInvidious(url);
+      console.log('[downloader] Invidious succeeded');
+      return result;
+    } catch (invidiousErr) {
+      console.error('[downloader] Invidious also failed:', invidiousErr.message?.slice(0, 100));
+      // Throw the yt-dlp error as primary — it's more informative
+      throw ytDlpErr;
+    }
+  }
 }
