@@ -424,6 +424,8 @@
 //     qualities,
 //   };
 // }
+
+
 import YTDlpWrapModule from 'yt-dlp-wrap';
 const YTDlpWrap = YTDlpWrapModule.default ?? YTDlpWrapModule;
 
@@ -472,88 +474,57 @@ function getQualityLabel(height) {
   if (height >= 1440) return `${height}p 2K`;
   if (height >= 1080) return `${height}p Full HD`;
   if (height >= 720)  return `${height}p HD`;
-  if (height >= 480)  return `${height}p`;
-  if (height >= 360)  return `${height}p`;
   return `${height}p`;
 }
 
 function exactSize(fmt) {
-  // filesize_approx is often available even when filesize isn't
   return fmt?.filesize || fmt?.filesize_approx || 0;
 }
 
-function baseArgs(url) {
-  return [
-    url,
-    '--no-warnings',
-    '--no-playlist',
-    '--no-check-certificate',
-    '--skip-download',
-  ];
-}
-
-// Cookies args — injected if cookies.txt exists (set YOUTUBE_COOKIES_B64 on Render)
 function cookiesArgs() {
-  if (existsSync(cookiesPath)) {
-    return ['--cookies', cookiesPath];
-  }
-  return [];
+  return existsSync(cookiesPath) ? ['--cookies', cookiesPath] : [];
 }
 
-// PO Token args — set YT_PO_TOKEN env var on Render if needed
-// Format: "visitor_data=Cgt...,po_token=MnQ..."
-function poTokenArgs() {
-  const token = process.env.YT_PO_TOKEN;
-  if (token) {
-    return ['--extractor-args', `youtube:po_token=${token}`];
-  }
-  return [];
+// yt-dlp only honours LAST --extractor-args per extractor key.
+// Merge player_client + optional po_token into a single flag value.
+function buildExtractorArgs(playerClient, poToken) {
+  let val = `youtube:player_client=${playerClient}`;
+  if (poToken) val += `,po_token=${poToken}`;
+  return ['--extractor-args', val];
 }
 
-// Client attempt chain — ordered by datacenter-friendliness
-// android_vr & mweb use InnerTube endpoints that Render IPs aren't blocked on
-const YT_INFO_ATTEMPTS = [
+// Ordered by how well each works on datacenter IPs (Render / Railway / Fly etc.)
+// android_vr hits a separate InnerTube endpoint with minimal bot checks
+const YT_CLIENTS = [
   {
-    name: 'android_vr',       // Best for datacenter IPs — VR client is lightly restricted
-    args: [
-      '--extractor-args', 'youtube:player_client=android_vr',
-      '--add-header', 'user-agent:Mozilla/5.0 (Linux; Android 10; SM-G981B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.162 Mobile Safari/537.36',
-    ],
+    name: 'android_vr',
+    client: 'android_vr',
+    ua: 'com.google.android.apps.youtube.vr.oculus/1.56.21 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip',
   },
   {
-    name: 'tv_embedded',      // TV embedded client — no bot checks
-    args: [
-      '--extractor-args', 'youtube:player_client=tv_embedded,web',
-      '--add-header', 'user-agent:Mozilla/5.0 (SMART-TV; Linux; Tizen 6.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/6.0 TV Safari/538.1',
-    ],
+    name: 'tv_embedded',
+    client: 'tv_embedded',
+    ua: 'Mozilla/5.0 (SMART-TV; Linux; Tizen 6.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/6.0 TV Safari/538.1',
   },
   {
-    name: 'mweb',             // Mobile web — lighter fingerprinting
-    args: [
-      '--extractor-args', 'youtube:player_client=mweb',
-      '--add-header', 'user-agent:Mozilla/5.0 (Linux; Android 11; Pixel 5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.91 Mobile Safari/537.36',
-    ],
+    name: 'mweb',
+    client: 'mweb',
+    ua: 'Mozilla/5.0 (Linux; Android 11; Pixel 5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.91 Mobile Safari/537.36',
   },
   {
-    name: 'ios',              // iOS client — often gets 4K formats
-    args: [
-      '--extractor-args', 'youtube:player_client=ios',
-      '--add-header', 'user-agent:com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X;)',
-    ],
+    name: 'ios',
+    client: 'ios',
+    ua: 'com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X;)',
   },
   {
     name: 'android',
-    args: [
-      '--extractor-args', 'youtube:player_client=android',
-      '--add-header', 'user-agent:com.google.android.youtube/19.30.36 (Linux; U; Android 11) gzip',
-    ],
+    client: 'android',
+    ua: 'com.google.android.youtube/19.30.36 (Linux; U; Android 11) gzip',
   },
   {
-    name: 'web',              // Fallback — most likely to be blocked on Render
-    args: [
-      '--extractor-args', 'youtube:player_client=web',
-      '--add-header', 'user-agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    ],
+    name: 'web',
+    client: 'web',
+    ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   },
 ];
 
@@ -583,7 +554,6 @@ function buildQualities(formats, url, title, API) {
 
   const bestAudioSize = exactSize(bestAudio);
 
-  // Deduplicate by height — prefer mp4, then highest bitrate
   const heightMap = new Map();
   for (const f of [...videoOnly, ...combined]) {
     const existing = heightMap.get(f.height);
@@ -595,11 +565,10 @@ function buildQualities(formats, url, title, API) {
   }
 
   const heights = [...heightMap.keys()].sort((a, b) => b - a);
-  console.log(`[info] heights=${heights.join(',')} audio=${formatSize(bestAudioSize) || 'none'}`);
+  console.log(`[info] heights=${heights.join(',')} | audio=${formatSize(bestAudioSize) || 'none'}`);
 
   const streamBase = `${API}/api/stream?url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}`;
 
-  // Always include "Best Quality" as first option — yt-dlp picks the best available at stream time
   const qualities = [{
     label: 'Best Quality',
     url: `${streamBase}&format=${encodeURIComponent('bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best')}`,
@@ -616,7 +585,6 @@ function buildQualities(formats, url, title, API) {
       ? videoSize
       : (videoSize > 0 && bestAudioSize > 0 ? videoSize + bestAudioSize : videoSize);
 
-    // Broad format selector with fallbacks — works across clients
     const formatSelector = isCombined
       ? `best[height<=${height}][ext=mp4]/best[height<=${height}]/best`
       : `bestvideo[height<=${height}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=${height}]+bestaudio/best[height<=${height}]/best`;
@@ -626,11 +594,10 @@ function buildQualities(formats, url, title, API) {
       url: `${streamBase}&format=${encodeURIComponent(formatSelector)}`,
       ext: 'mp4',
       resolution: vfmt.width ? `${vfmt.width}×${height}` : `${height}p`,
-      size: formatSize(totalSize),  // Show approximate size
+      size: formatSize(totalSize),
     });
   }
 
-  // Non-YouTube fallback (Instagram / TikTok / Facebook — single stream URLs)
   if (heights.length === 0) {
     const fallbacks = formats
       .filter(f => f.url && !['m3u8', 'm3u8_native', 'hls'].includes(f.protocol))
@@ -655,65 +622,48 @@ export async function getVideoInfo(url) {
   const ytDlp = getYtDlp();
   const platform = detectPlatform(url);
   const API = process.env.API_BASE_URL || 'http://localhost:3001';
-
+  const poToken = process.env.YT_PO_TOKEN || null;
   const cookies = cookiesArgs();
-  const poToken = poTokenArgs();
 
   let raw;
   let lastError;
 
   if (platform === 'youtube') {
-    for (const attempt of YT_INFO_ATTEMPTS) {
+    for (const attempt of YT_CLIENTS) {
       try {
-        console.log(`[yt-dlp] trying client: ${attempt.name} | cookies=${cookies.length > 0} | poToken=${poToken.length > 0}`);
-
         const args = [
-          ...baseArgs(url),
-          ...attempt.args,
+          url,
+          '--no-warnings',
+          '--no-playlist',
+          '--no-check-certificate',
+          '--skip-download',
+          ...buildExtractorArgs(attempt.client, poToken),  // single merged --extractor-args
+          '--add-header', `user-agent:${attempt.ua}`,
           ...cookies,
-          ...poToken,
-          // These flags help avoid bot detection
-          '--no-cache-dir',
-          '--extractor-args', attempt.args.find(a => a.startsWith('youtube:player_client'))
-            ? '' // already set above
-            : `youtube:skip=hls,dash`,
-        ].filter(Boolean).filter((a, i, arr) => {
-          // Deduplicate --extractor-args — only keep first occurrence per key
-          if (a === '--extractor-args') {
-            return arr.indexOf('--extractor-args') === i;
-          }
-          return true;
-        });
+        ];
 
-        raw = await ytDlp.getVideoInfo([
-          ...baseArgs(url),
-          ...attempt.args,
-          ...cookies,
-          ...poToken,
-        ]);
-
+        console.log(`[yt-dlp] trying: ${attempt.name} | cookies=${cookies.length > 0} | poToken=${!!poToken}`);
+        raw = await ytDlp.getVideoInfo(args);
         console.log(`[yt-dlp] success: ${attempt.name} | formats: ${raw.formats?.length || 0}`);
         break;
+
       } catch (err) {
         lastError = err;
         const msg = (err?.stderr || err?.message || '').toLowerCase();
-        console.error(`[yt-dlp] ${attempt.name} failed:`, (err?.stderr || err?.message || '').slice(0, 200));
+        console.error(`[yt-dlp] ${attempt.name} failed:`, (err?.stderr || err?.message || '').slice(0, 300));
 
-        // Skip remaining attempts if it's a known unrecoverable error
-        if (msg.includes('video unavailable') || msg.includes('private video')) {
-          break;
-        }
+        if (
+          msg.includes('video unavailable') ||
+          msg.includes('private video') ||
+          msg.includes('has been removed')
+        ) break; // No point retrying — these won't change across clients
       }
     }
 
-    if (!raw) {
-      const errMsg = lastError?.stderr || lastError?.message || 'All YouTube clients failed';
-      throw new Error(errMsg);
-    }
+    if (!raw) throw new Error(lastError?.stderr || lastError?.message || 'All YouTube clients failed');
 
   } else {
-    // Non-YouTube platforms (Instagram, TikTok, Twitter, Facebook, etc.)
-    const extraHeaders = (platform === 'instagram' || platform === 'facebook') ? [
+    const extraHeaders = ['instagram', 'facebook'].includes(platform) ? [
       '--add-header', 'Accept:text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
       '--add-header', 'Accept-Language:en-us,en;q=0.5',
       '--add-header', 'Sec-Fetch-Mode:navigate',
@@ -724,7 +674,11 @@ export async function getVideoInfo(url) {
 
     try {
       raw = await ytDlp.getVideoInfo([
-        ...baseArgs(url),
+        url,
+        '--no-warnings',
+        '--no-playlist',
+        '--no-check-certificate',
+        '--skip-download',
         ...extraHeaders,
         ...cookies,
       ]);
