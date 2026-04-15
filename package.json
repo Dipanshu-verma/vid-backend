@@ -4,17 +4,14 @@
   "type": "module",
   "scripts": {
     "dev": "node --watch index.js",
-    "start": "nodemon index.js",
-     "postinstall": "node setup.js"
-   "postinstall": "node scripts/postinstall.js",
-    "start": "nodemon index.js"
+    "start": "node index.js",
+    "postinstall": "node setup.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "express-rate-limit": "^7.3.1",
-    "nodemon": "^3.1.14",
     "yt-dlp-wrap": "^2.3.12"
   }
 }
