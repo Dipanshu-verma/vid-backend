@@ -159,7 +159,6 @@ function buildExtractorArgs(playerClient, poToken) {
   return ['--extractor-args', val];
 }
 
-// Same client order as downloader.js
 const YT_CLIENTS = [
   { name: 'android_vr',  client: 'android_vr',  ua: 'com.google.android.apps.youtube.vr.oculus/1.56.21 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip' },
   { name: 'tv_embedded', client: 'tv_embedded',  ua: 'Mozilla/5.0 (SMART-TV; Linux; Tizen 6.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/6.0 TV Safari/538.1' },
@@ -169,7 +168,8 @@ const YT_CLIENTS = [
   { name: 'web',         client: 'web',          ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
 ];
 
-function resolveUrls(url, formatSelector) {
+// Resolve YouTube URL → direct stream URLs via yt-dlp (used when Invidious was NOT the source)
+function resolveViaYtDlp(url, formatSelector) {
   const cookies = cookiesArgs();
   const poToken = process.env.YT_PO_TOKEN || null;
 
@@ -180,8 +180,7 @@ function resolveUrls(url, formatSelector) {
   } catch { /**/ }
 
   const clients = isYouTube ? YT_CLIENTS : [{
-    name: 'default',
-    client: null,
+    name: 'default', client: null,
     ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
   }];
 
@@ -200,12 +199,11 @@ function resolveUrls(url, formatSelector) {
         ...cookies,
       ];
 
-      // Only inject extractor args for YouTube
-      if (isYouTube) {
+      if (isYouTube && attempt.client) {
         args.push(...buildExtractorArgs(attempt.client, poToken));
       }
 
-      console.log(`[stream] resolving with client: ${attempt.name}`);
+      console.log(`[stream] yt-dlp resolve: ${attempt.name}`);
       const out = execFileSync(binPath, args, { timeout: 45000 }).toString().trim();
       const lines = out.split('\n').map(l => l.trim()).filter(Boolean);
 
@@ -216,7 +214,7 @@ function resolveUrls(url, formatSelector) {
     } catch (e) {
       lastError = e;
       const msg = (e?.message || '').toLowerCase();
-      console.error(`[stream] ${attempt.name} resolve failed:`, (e?.message || '').slice(0, 200));
+      console.error(`[stream] ${attempt.name} failed:`, (e?.message || '').slice(0, 150));
       if (msg.includes('video unavailable') || msg.includes('private video')) break;
     }
   }
@@ -224,29 +222,9 @@ function resolveUrls(url, formatSelector) {
   throw new Error('Could not resolve video URL: ' + (lastError?.message || 'all clients failed'));
 }
 
-router.get('/stream', (req, res) => {
-  const { url, title, format } = req.query;
-
-  if (!url) return res.status(400).json({ error: 'URL is required.' });
-  if (!existsSync(binPath))    return res.status(500).json({ error: 'yt-dlp not found.' });
-  if (!existsSync(ffmpegPath)) return res.status(500).json({ error: 'ffmpeg not found.' });
-
-  try { new URL(url); } catch { return res.status(400).json({ error: 'Invalid URL.' }); }
-
+// Shared ffmpeg pipe logic
+function streamViaFfmpeg(req, res, urls, title) {
   const filename = safeFilename(title);
-  const formatSelector = format || 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best';
-
-  console.log(`[stream] Starting: "${filename}" | format="${formatSelector}"`);
-
-  let urls;
-  try {
-    urls = resolveUrls(url, formatSelector);
-  } catch (e) {
-    console.error('[stream] resolve error:', e.message);
-    return res.status(500).json({ error: e.message });
-  }
-
-  if (!urls.length) return res.status(500).json({ error: 'No downloadable URL found.' });
 
   res.setHeader('Content-Disposition',
     `attachment; filename="${filename}.mp4"; filename*=UTF-8''${encodeURIComponent(filename + '.mp4')}`
@@ -255,22 +233,21 @@ router.get('/stream', (req, res) => {
   res.setHeader('Transfer-Encoding', 'chunked');
   res.setHeader('X-Accel-Buffering', 'no');
 
+  const reconnectArgs = ['-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5'];
+
   let ffmpegArgs;
 
-  if (urls.length === 1) {
+  if (urls.length === 1 || !urls[1]) {
     ffmpegArgs = [
-      '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
-      '-i', urls[0],
+      ...reconnectArgs, '-i', urls[0],
       '-c', 'copy',
       '-movflags', 'frag_keyframe+empty_moov+faststart',
       '-f', 'mp4', 'pipe:1',
     ];
   } else {
     ffmpegArgs = [
-      '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
-      '-i', urls[0],
-      '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
-      '-i', urls[1],
+      ...reconnectArgs, '-i', urls[0],   // video
+      ...reconnectArgs, '-i', urls[1],   // audio
       '-c:v', 'copy', '-c:a', 'copy',
       '-movflags', 'frag_keyframe+empty_moov+faststart',
       '-f', 'mp4', 'pipe:1',
@@ -300,8 +277,44 @@ router.get('/stream', (req, res) => {
   });
 
   req.on('close', () => {
+    console.log('[stream] client disconnected, killing ffmpeg');
     ffmpeg.kill('SIGKILL');
   });
+}
+
+router.get('/stream', (req, res) => {
+  if (!existsSync(ffmpegPath)) return res.status(500).json({ error: 'ffmpeg not found.' });
+
+  const { url, title, format, videoUrl, audioUrl } = req.query;
+
+  // ── Direct mode (Invidious) ───────────────────────────────────────────────
+  // Invidious already resolved stream URLs — skip yt-dlp entirely
+  if (videoUrl) {
+    console.log(`[stream] direct mode | audio=${!!audioUrl}`);
+    const urls = audioUrl ? [videoUrl, audioUrl] : [videoUrl];
+    return streamViaFfmpeg(req, res, urls, title);
+  }
+
+  // ── yt-dlp resolve mode (YouTube direct URL) ─────────────────────────────
+  if (!url) return res.status(400).json({ error: 'URL or videoUrl is required.' });
+  if (!existsSync(binPath)) return res.status(500).json({ error: 'yt-dlp not found.' });
+
+  try { new URL(url); } catch { return res.status(400).json({ error: 'Invalid URL.' }); }
+
+  const formatSelector = format || 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best';
+  console.log(`[stream] yt-dlp mode | format="${formatSelector}"`);
+
+  let urls;
+  try {
+    urls = resolveViaYtDlp(url, formatSelector);
+  } catch (e) {
+    console.error('[stream] resolve error:', e.message);
+    return res.status(500).json({ error: e.message });
+  }
+
+  if (!urls.length) return res.status(500).json({ error: 'No downloadable URL found.' });
+
+  streamViaFfmpeg(req, res, urls, title);
 });
 
 export default router;
