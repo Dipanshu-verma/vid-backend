@@ -57,8 +57,19 @@ if (existsSync(ytDlpPath)) {
     await YTDlpWrap.downloadFromGithub(ytDlpPath);
     if (!isWin) chmodSync(ytDlpPath, '755');
     console.log('✅ yt-dlp downloaded');
+
   } catch (e) {
     console.error('❌ yt-dlp download failed:', e.message);
+  }
+}
+
+// Always update yt-dlp to latest on deploy — fixes YouTube blocks
+if (!isWin && existsSync(ytDlpPath)) {
+  try {
+    execSync(`${ytDlpPath} -U`, { stdio: 'pipe', timeout: 30000 });
+    console.log('✅ yt-dlp updated to latest');
+  } catch {
+    console.log('ℹ️  yt-dlp update skipped');
   }
 }
 
