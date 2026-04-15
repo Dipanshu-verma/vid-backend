@@ -9,9 +9,25 @@ dotenv.config();
 
 const app = express();
 
+const allowedOrigins = (process.env.CLIENT_URL || '*')
+  .split(',')
+  .map((o) => o.trim().replace(/\/$/, '')); // trim spaces & trailing slashes
+
 app.use(cors({
-  origin: process.env.CLIENT_URL || '*',
+  origin: (origin, callback) => {
+    // Allow non-browser requests (e.g. curl, Postman) or wildcard
+    if (!origin || allowedOrigins.includes('*')) return callback(null, true);
+
+    const normalizedOrigin = origin.replace(/\/$/, '');
+    if (allowedOrigins.includes(normalizedOrigin)) {
+      callback(null, true);
+    } else {
+      console.warn(`❌ CORS blocked: ${origin}`);
+      callback(new Error(`CORS policy: origin ${origin} is not allowed`));
+    }
+  },
   methods: ['GET', 'POST'],
+  credentials: true,
 }));
 
 app.use(express.json());
