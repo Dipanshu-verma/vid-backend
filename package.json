@@ -5,8 +5,7 @@
   "scripts": {
     "dev": "node --watch index.js",
     "start": "node index.js",
-    "postinstall": "node setup.js",
-    "build": "apt-get install -y ffmpeg || true"
+    "postinstall": "node setup.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
