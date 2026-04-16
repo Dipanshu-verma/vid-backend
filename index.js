@@ -8,6 +8,7 @@ import streamRouter from './routes/stream.js';
 dotenv.config();
 
 const app = express();
+const API_BASE_URL = process.env.API_BASE_URL;
 
 const allowedOrigins = (process.env.CLIENT_URL || '*')
   .split(',')
