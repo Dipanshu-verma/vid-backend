@@ -8,16 +8,19 @@ import streamRouter from './routes/stream.js';
 dotenv.config();
 
 const app = express();
+const API_BASE_URL = process.env.API_BASE_URL;
+
+// Must be first — Render sits behind a proxy and forwards X-Forwarded-For
+// Without this, express-rate-limit throws ERR_ERL_UNEXPECTED_X_FORWARDED_FOR
+app.set('trust proxy', 1);
 
 const allowedOrigins = (process.env.CLIENT_URL || '*')
   .split(',')
-  .map((o) => o.trim().replace(/\/$/, '')); // trim spaces & trailing slashes
+  .map((o) => o.trim().replace(/\/$/, ''));
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow non-browser requests (e.g. curl, Postman) or wildcard
     if (!origin || allowedOrigins.includes('*')) return callback(null, true);
-
     const normalizedOrigin = origin.replace(/\/$/, '');
     if (allowedOrigins.includes(normalizedOrigin)) {
       callback(null, true);
