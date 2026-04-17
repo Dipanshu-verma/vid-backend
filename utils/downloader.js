@@ -660,3 +660,37 @@ export async function getVideoInfo(url) {
     }
   }
 }
+
+async function getVideoInfoFromCobalt(url) {
+  const API = process.env.API_BASE_URL || 'http://localhost:3001';
+  const COBALT_INSTANCES = [
+    'https://api.cobalt.tools',
+    'https://cobalt.api.timurs.de',
+    'https://cobalt-api.kwiatekmiki.com',
+  ];
+  let lastError;
+  for (const instance of COBALT_INSTANCES) {
+    try {
+      const res = await fetch(`${instance}/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({ url, videoQuality: 'max', filenameStyle: 'basic' }),
+        signal: AbortSignal.timeout(15000),
+      });
+      const data = await res.json();
+      if (data.status === 'error') { lastError = data.error?.code; continue; }
+      if (!['stream','redirect','tunnel'].includes(data.status)) { lastError = data.status; continue; }
+      if (!data.url) { lastError = 'no url'; continue; }
+      let videoId = '';
+      try { const u = new URL(url); videoId = u.searchParams.get('v') || u.pathname.split('/').pop() || ''; } catch {}
+      const streamUrl = `${API}/api/stream?url=${encodeURIComponent(url)}&title=video&videoUrl=${encodeURIComponent(data.url)}`;
+      return {
+        platform: 'youtube', title: 'YouTube Video',
+        thumbnail: videoId ? `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg` : '',
+        qualities: [{ label: 'Best Quality', url: streamUrl, ext: 'mp4' }],
+        _source: 'cobalt',
+      };
+    } catch (e) { lastError = e?.message; continue; }
+  }
+  throw new Error('Cobalt failed: ' + lastError);
+}
