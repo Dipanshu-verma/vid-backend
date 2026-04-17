@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "node --watch index.js",
-"start": "node setup.js && node index.js",
+    "start": "node setup.js && node index.js",
     "postinstall": "node setup.js"
   },
   "dependencies": {
