@@ -671,6 +671,7 @@ async function getVideoInfoFromCobalt(url) {
   let lastError;
   for (const instance of COBALT_INSTANCES) {
     try {
+      console.log(`[cobalt] trying: ${instance}`);
       const res = await fetch(`${instance}/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
@@ -678,19 +679,29 @@ async function getVideoInfoFromCobalt(url) {
         signal: AbortSignal.timeout(15000),
       });
       const data = await res.json();
+      console.log(`[cobalt] status: ${data.status}`);
       if (data.status === 'error') { lastError = data.error?.code; continue; }
-      if (!['stream','redirect','tunnel'].includes(data.status)) { lastError = data.status; continue; }
+      if (!['stream', 'redirect', 'tunnel'].includes(data.status)) { lastError = data.status; continue; }
       if (!data.url) { lastError = 'no url'; continue; }
       let videoId = '';
-      try { const u = new URL(url); videoId = u.searchParams.get('v') || u.pathname.split('/').pop() || ''; } catch {}
+      try {
+        const u = new URL(url);
+        videoId = u.searchParams.get('v') || u.pathname.split('/').pop() || '';
+      } catch {}
       const streamUrl = `${API}/api/stream?url=${encodeURIComponent(url)}&title=video&videoUrl=${encodeURIComponent(data.url)}`;
+      console.log(`[cobalt] ✓ success via ${instance}`);
       return {
-        platform: 'youtube', title: 'YouTube Video',
+        platform: 'youtube',
+        title: 'YouTube Video',
         thumbnail: videoId ? `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg` : '',
         qualities: [{ label: 'Best Quality', url: streamUrl, ext: 'mp4' }],
         _source: 'cobalt',
       };
-    } catch (e) { lastError = e?.message; continue; }
+    } catch (e) {
+      lastError = e?.message;
+      console.error(`[cobalt] ${instance} failed:`, lastError);
+      continue;
+    }
   }
   throw new Error('Cobalt failed: ' + lastError);
 }
