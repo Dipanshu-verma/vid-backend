@@ -206,12 +206,12 @@ export async function getVideoInfo(url) {
   const platform = detectPlatform(url);
 
   // Non-YouTube: yt-dlp only
-if (platform === 'youtube') {
-  args.push(
-    '--extractor-args',
-    'youtube:player_client=ios,mweb;player_skip=webpage,configs'
-  );
-}
+//if (platform === 'youtube') {
+//  args.push(
+//    '--extractor-args',
+//    'youtube:player_client=ios,mweb;player_skip=webpage,configs'
+//  );
+//}
 
   // YouTube: yt-dlp → Invidious → Piped
   console.log('[downloader] YouTube detected, trying yt-dlp first...');
