@@ -323,146 +323,13 @@
 ////export default router;
 //
 //
-//import { Router } from 'express';
-//import { spawn } from 'child_process';
-//import { join, dirname } from 'path';
-//import { fileURLToPath } from 'url';
-//import { existsSync, createReadStream, unlinkSync, statSync } from 'fs';
-//import { tmpdir } from 'os';
-//import { randomBytes } from 'crypto';
-//import { execFileSync } from 'child_process';
-//
-//const __dirname = dirname(fileURLToPath(import.meta.url));
-//const binPath  = join(__dirname, '..', 'bin', process.platform === 'win32' ? 'yt-dlp.exe'  : 'yt-dlp');
-//const ffmpegPath = join(__dirname, '..', 'bin', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
-//
-//const router = Router();
-//
-//function safeFilename(title) {
-//  return (title || 'video')
-//    .replace(/[^\x20-\x7E]/g, '')
-//    .replace(/[/\\:*?"<>|,;=]/g, '')
-//    .replace(/\s+/g, ' ')
-//    .trim()
-//    .slice(0, 80) || 'video';
-//}
-//
-//function resolveUrls(url, formatSelector) {
-//  try {
-//    const out = execFileSync(binPath, [
-//      url,
-//      '-f', formatSelector,
-//      '--get-url',
-//      '--no-warnings',
-//      '--no-playlist',
-//      '--no-check-certificate',
-//      '--add-header', 'user-agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0',
-//    ], { timeout: 30000 }).toString().trim();
-//    return out.split('\n').map(l => l.trim()).filter(Boolean);
-//  } catch (e) {
-//    throw new Error('Could not resolve video URL: ' + (e?.message || e));
-//  }
-//}
-//
-//router.get('/stream', (req, res) => {
-//  const { url, title, format } = req.query;
-//
-//  if (!url) return res.status(400).json({ error: 'URL is required.' });
-//  if (!existsSync(binPath))   return res.status(500).json({ error: 'yt-dlp not found.' });
-//  if (!existsSync(ffmpegPath)) return res.status(500).json({ error: 'ffmpeg not found.' });
-//
-//  try { new URL(url); } catch { return res.status(400).json({ error: 'Invalid URL.' }); }
-//
-//  const filename = safeFilename(title);
-//  const formatSelector = format || 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best';
-//  const tmpFile = join(tmpdir(), `vidsave_${randomBytes(8).toString('hex')}.mp4`);
-//
-//  console.log(`[stream] Resolving: "${filename}"`);
-//
-//  let urls;
-//  try {
-//    urls = resolveUrls(url, formatSelector);
-//  } catch (e) {
-//    return res.status(500).json({ error: e.message });
-//  }
-//
-//  if (!urls.length) return res.status(500).json({ error: 'No URL found.' });
-//
-//  // Build ffmpeg args — write to temp file so duration is correct
-//  let ffmpegArgs;
-//  if (urls.length === 1) {
-//    ffmpegArgs = [
-//      '-i', urls[0],
-//      '-c', 'copy',
-//      '-movflags', '+faststart',
-//      tmpFile,
-//    ];
-//  } else {
-//    ffmpegArgs = [
-//      '-i', urls[0],
-//      '-i', urls[1],
-//      '-c:v', 'copy',
-//      '-c:a', 'copy',
-//      '-movflags', '+faststart',
-//      tmpFile,
-//    ];
-//  }
-//
-//  const ffmpeg = spawn(ffmpegPath, ffmpegArgs);
-//  let aborted = false;
-//
-//  ffmpeg.stderr.on('data', d => {
-//    const line = d.toString().trim();
-//    if (line.includes('time=') || line.includes('Error')) console.log('[ffmpeg]', line);
-//  });
-//
-//  ffmpeg.on('error', (err) => {
-//    console.error('[ffmpeg error]', err.message);
-//    if (!res.headersSent) res.status(500).json({ error: 'ffmpeg failed.' });
-//  });
-//
-//  ffmpeg.on('close', (code) => {
-//    if (aborted) { try { unlinkSync(tmpFile); } catch {} return; }
-//
-//    if (code !== 0 || !existsSync(tmpFile)) {
-//      if (!res.headersSent) res.status(500).json({ error: 'Download failed.' });
-//      return;
-//    }
-//
-//    const fileSize = statSync(tmpFile).size;
-//    console.log(`[stream] Done ${(fileSize/1024/1024).toFixed(1)}MB → sending`);
-//
-//    res.setHeader('Content-Disposition',
-//      `attachment; filename="${filename}.mp4"; filename*=UTF-8''${encodeURIComponent(filename + '.mp4')}`
-//    );
-//    res.setHeader('Content-Type', 'video/mp4');
-//    res.setHeader('Content-Length', fileSize);
-//
-//    const fileStream = createReadStream(tmpFile);
-//    fileStream.pipe(res);
-//    fileStream.on('error', () => res.end());
-//    fileStream.on('close', () => { try { unlinkSync(tmpFile); } catch {} });
-//  });
-//
-//  req.on('close', () => {
-//    aborted = true;
-//    ffmpeg.kill('SIGKILL');
-//    setTimeout(() => { try { unlinkSync(tmpFile); } catch {} }, 1000);
-//  });
-//});
-//
-//export default router;
-
 import { Router } from 'express';
-import { spawn, execFileSync } from 'child_process';
+import { spawn } from 'child_process';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { existsSync, createReadStream, unlinkSync, statSync } from 'fs';
-import { tmpdir } from 'os';
-import { randomBytes } from 'crypto';
+import { existsSync } from 'fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const binPath    = join(__dirname, '..', 'bin', process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');
 const ffmpegPath = join(__dirname, '..', 'bin', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
 
 const router = Router();
@@ -476,66 +343,65 @@ function safeFilename(title) {
     .slice(0, 80) || 'video';
 }
 
-function resolveUrls(url, formatSelector) {
-  const cookiesPath = join(__dirname, '..', 'bin', 'cookies.txt');
-  const cookiesArgs = existsSync(cookiesPath) ? ['--cookies', cookiesPath] : [];
+// Poll RapidAPI render status via SSE
+router.get('/render-status', async (req, res) => {
+  const { statusUrl } = req.query;
+  if (!statusUrl) return res.status(400).json({ error: 'statusUrl required' });
 
   try {
-    const out = execFileSync(binPath, [
-      url,
-      '-f', formatSelector,
-      '--get-url',
-      '--no-warnings',
-      '--no-playlist',
-      '--no-check-certificate',
-      '--add-header', 'user-agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0',
-      ...cookiesArgs,
-    ], { timeout: 30000 }).toString().trim();
-    return out.split('\n').map(l => l.trim()).filter(Boolean);
-  } catch (e) {
-    throw new Error('Could not resolve video URL: ' + (e?.message || e));
-  }
-}
+    console.log(`[render-status] polling: ${statusUrl}`);
+    const response = await fetch(statusUrl, {
+      headers: { 'Accept': 'text/event-stream' },
+      signal: AbortSignal.timeout(120000),
+    });
 
+    let buffer = '';
+    const reader = response.body;
+
+    for await (const chunk of reader) {
+      buffer += chunk.toString();
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        if (!line.startsWith('data:')) continue;
+        try {
+          const data = JSON.parse(line.slice(5).trim());
+          console.log(`[render-status] status: ${data.status} progress: ${data.progress}`);
+
+          if (data.status === 'done' && data.output?.url) {
+            console.log('[render-status] ✓ render complete');
+            return res.json({ url: data.output.url });
+          }
+          if (data.status === 'error' || data.status === 'failed') {
+            return res.status(500).json({ error: 'Render failed' });
+          }
+        } catch {}
+      }
+    }
+
+    res.status(500).json({ error: 'Render timeout or no output' });
+  } catch (e) {
+    console.error('[render-status] error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Stream video via ffmpeg
 router.get('/stream', (req, res) => {
-  const { url, title, format, videoUrl, audioUrl } = req.query;
+  const { title, videoUrl, audioUrl } = req.query;
 
   if (!existsSync(ffmpegPath)) return res.status(500).json({ error: 'ffmpeg not found.' });
+  if (!videoUrl) return res.status(400).json({ error: 'videoUrl is required.' });
 
   const filename = safeFilename(title);
+  console.log(`[stream] direct mode | title="${filename}" | audio=${!!audioUrl}`);
 
-  // Direct mode — Invidious/Cobalt already resolved URLs
-  if (videoUrl) {
-    console.log(`[stream] direct mode | audio=${!!audioUrl}`);
-    const urls = audioUrl ? [videoUrl, audioUrl] : [videoUrl];
-    return streamViaFfmpeg(req, res, urls, filename);
-  }
-
-  if (!url) return res.status(400).json({ error: 'URL is required.' });
-  if (!existsSync(binPath)) return res.status(500).json({ error: 'yt-dlp not found.' });
-
-  try { new URL(url); } catch { return res.status(400).json({ error: 'Invalid URL.' }); }
-
-  const formatSelector = format || 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best';
-  console.log(`[stream] Resolving: "${filename}" format="${formatSelector}"`);
-
-  let urls;
-  try {
-    urls = resolveUrls(url, formatSelector);
-  } catch (e) {
-    console.error('[resolve error]', e.message);
-    return res.status(500).json({ error: e.message });
-  }
-
-  if (!urls.length) return res.status(500).json({ error: 'No URL found.' });
-  console.log(`[stream] Got ${urls.length} URL(s)`);
-
+  const urls = audioUrl ? [videoUrl, audioUrl] : [videoUrl];
   streamViaFfmpeg(req, res, urls, filename);
 });
 
 function streamViaFfmpeg(req, res, urls, filename) {
-  // Use fragmented MP4 streaming — no temp file, starts immediately
-  // This avoids Cloudflare's 30s timeout
   const reconnect = ['-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '10'];
 
   let ffmpegArgs;
@@ -562,16 +428,12 @@ function streamViaFfmpeg(req, res, urls, filename) {
   res.setHeader('Content-Disposition',
     `attachment; filename="${filename}.mp4"; filename*=UTF-8''${encodeURIComponent(filename + '.mp4')}`
   );
-//  res.setHeader('Content-Type', 'video/mp4');
-//  res.setHeader('Transfer-Encoding', 'chunked');
-//  res.setHeader('X-Accel-Buffering', 'no');
-//  res.setHeader('Cache-Control', 'no-cache');
-res.setHeader('Content-Type', 'video/mp4');
-res.setHeader('Transfer-Encoding', 'chunked');
-res.setHeader('X-Accel-Buffering', 'no');
-res.setHeader('Cache-Control', 'no-cache');
-res.setHeader('Connection', 'keep-alive');
-res.setHeader('Keep-Alive', 'timeout=300');
+  res.setHeader('Content-Type', 'video/mp4');
+  res.setHeader('Transfer-Encoding', 'chunked');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('Keep-Alive', 'timeout=300');
 
   const ffmpeg = spawn(ffmpegPath, ffmpegArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
 
@@ -602,3 +464,153 @@ res.setHeader('Keep-Alive', 'timeout=300');
 }
 
 export default router;
+//
+//import { Router } from 'express';
+//import { spawn, execFileSync } from 'child_process';
+//import { join, dirname } from 'path';
+//import { fileURLToPath } from 'url';
+//import { existsSync, createReadStream, unlinkSync, statSync } from 'fs';
+//import { tmpdir } from 'os';
+//import { randomBytes } from 'crypto';
+//
+//const __dirname = dirname(fileURLToPath(import.meta.url));
+//const binPath    = join(__dirname, '..', 'bin', process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');
+//const ffmpegPath = join(__dirname, '..', 'bin', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
+//
+//const router = Router();
+//
+//function safeFilename(title) {
+//  return (title || 'video')
+//    .replace(/[^\x20-\x7E]/g, '')
+//    .replace(/[/\\:*?"<>|,;=]/g, '')
+//    .replace(/\s+/g, ' ')
+//    .trim()
+//    .slice(0, 80) || 'video';
+//}
+//
+//function resolveUrls(url, formatSelector) {
+//  const cookiesPath = join(__dirname, '..', 'bin', 'cookies.txt');
+//  const cookiesArgs = existsSync(cookiesPath) ? ['--cookies', cookiesPath] : [];
+//
+//  try {
+//    const out = execFileSync(binPath, [
+//      url,
+//      '-f', formatSelector,
+//      '--get-url',
+//      '--no-warnings',
+//      '--no-playlist',
+//      '--no-check-certificate',
+//      '--add-header', 'user-agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0',
+//      ...cookiesArgs,
+//    ], { timeout: 30000 }).toString().trim();
+//    return out.split('\n').map(l => l.trim()).filter(Boolean);
+//  } catch (e) {
+//    throw new Error('Could not resolve video URL: ' + (e?.message || e));
+//  }
+//}
+//
+//router.get('/stream', (req, res) => {
+//  const { url, title, format, videoUrl, audioUrl } = req.query;
+//
+//  if (!existsSync(ffmpegPath)) return res.status(500).json({ error: 'ffmpeg not found.' });
+//
+//  const filename = safeFilename(title);
+//
+//  // Direct mode — Invidious/Cobalt already resolved URLs
+//  if (videoUrl) {
+//    console.log(`[stream] direct mode | audio=${!!audioUrl}`);
+//    const urls = audioUrl ? [videoUrl, audioUrl] : [videoUrl];
+//    return streamViaFfmpeg(req, res, urls, filename);
+//  }
+//
+//  if (!url) return res.status(400).json({ error: 'URL is required.' });
+//  if (!existsSync(binPath)) return res.status(500).json({ error: 'yt-dlp not found.' });
+//
+//  try { new URL(url); } catch { return res.status(400).json({ error: 'Invalid URL.' }); }
+//
+//  const formatSelector = format || 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best';
+//  console.log(`[stream] Resolving: "${filename}" format="${formatSelector}"`);
+//
+//  let urls;
+//  try {
+//    urls = resolveUrls(url, formatSelector);
+//  } catch (e) {
+//    console.error('[resolve error]', e.message);
+//    return res.status(500).json({ error: e.message });
+//  }
+//
+//  if (!urls.length) return res.status(500).json({ error: 'No URL found.' });
+//  console.log(`[stream] Got ${urls.length} URL(s)`);
+//
+//  streamViaFfmpeg(req, res, urls, filename);
+//});
+//
+//function streamViaFfmpeg(req, res, urls, filename) {
+//  // Use fragmented MP4 streaming — no temp file, starts immediately
+//  // This avoids Cloudflare's 30s timeout
+//  const reconnect = ['-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '10'];
+//
+//  let ffmpegArgs;
+//  if (urls.length === 1) {
+//    ffmpegArgs = [
+//      ...reconnect, '-i', urls[0],
+//      '-c', 'copy',
+//      '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
+//      '-f', 'mp4',
+//      'pipe:1',
+//    ];
+//  } else {
+//    ffmpegArgs = [
+//      ...reconnect, '-i', urls[0],
+//      ...reconnect, '-i', urls[1],
+//      '-c:v', 'copy',
+//      '-c:a', 'copy',
+//      '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
+//      '-f', 'mp4',
+//      'pipe:1',
+//    ];
+//  }
+//
+//  res.setHeader('Content-Disposition',
+//    `attachment; filename="${filename}.mp4"; filename*=UTF-8''${encodeURIComponent(filename + '.mp4')}`
+//  );
+////  res.setHeader('Content-Type', 'video/mp4');
+////  res.setHeader('Transfer-Encoding', 'chunked');
+////  res.setHeader('X-Accel-Buffering', 'no');
+////  res.setHeader('Cache-Control', 'no-cache');
+//res.setHeader('Content-Type', 'video/mp4');
+//res.setHeader('Transfer-Encoding', 'chunked');
+//res.setHeader('X-Accel-Buffering', 'no');
+//res.setHeader('Cache-Control', 'no-cache');
+//res.setHeader('Connection', 'keep-alive');
+//res.setHeader('Keep-Alive', 'timeout=300');
+//
+//  const ffmpeg = spawn(ffmpegPath, ffmpegArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+//
+//  ffmpeg.stdout.pipe(res);
+//
+//  ffmpeg.stderr.on('data', d => {
+//    const line = d.toString().trim();
+//    if (line.includes('time=') || line.includes('Error') || line.includes('error')) {
+//      console.log('[ffmpeg]', line);
+//    }
+//  });
+//
+//  ffmpeg.on('error', err => {
+//    console.error('[ffmpeg error]', err.message);
+//    if (!res.headersSent) res.status(500).json({ error: 'ffmpeg failed.' });
+//    else res.end();
+//  });
+//
+//  ffmpeg.on('close', code => {
+//    console.log(`[stream] ffmpeg done code=${code}`);
+//    if (!res.writableEnded) res.end();
+//  });
+//
+//  req.on('close', () => {
+//    console.log('[stream] client disconnected');
+//    ffmpeg.kill('SIGKILL');
+//  });
+//}
+//
+//export default router;
