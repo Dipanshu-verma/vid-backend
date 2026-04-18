@@ -562,10 +562,16 @@ function streamViaFfmpeg(req, res, urls, filename) {
   res.setHeader('Content-Disposition',
     `attachment; filename="${filename}.mp4"; filename*=UTF-8''${encodeURIComponent(filename + '.mp4')}`
   );
-  res.setHeader('Content-Type', 'video/mp4');
-  res.setHeader('Transfer-Encoding', 'chunked');
-  res.setHeader('X-Accel-Buffering', 'no');
-  res.setHeader('Cache-Control', 'no-cache');
+//  res.setHeader('Content-Type', 'video/mp4');
+//  res.setHeader('Transfer-Encoding', 'chunked');
+//  res.setHeader('X-Accel-Buffering', 'no');
+//  res.setHeader('Cache-Control', 'no-cache');
+res.setHeader('Content-Type', 'video/mp4');
+res.setHeader('Transfer-Encoding', 'chunked');
+res.setHeader('X-Accel-Buffering', 'no');
+res.setHeader('Cache-Control', 'no-cache');
+res.setHeader('Connection', 'keep-alive');
+res.setHeader('Keep-Alive', 'timeout=300');
 
   const ffmpeg = spawn(ffmpegPath, ffmpegArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
 
