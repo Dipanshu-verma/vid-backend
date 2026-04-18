@@ -378,10 +378,10 @@ export async function getVideoInfo(url) {
     if (!match) throw new Error('Could not extract Instagram shortcode');
     const shortcode = match[2];
     endpoint = '/instagram/v3/media/post/details';
-    params = `?shortcode=${shortcode}&renderableFormats=144p,240p,360p,480p,720p,1080p&fields=contents,metadata`;
+    params = `?shortcode=${shortcode}&renderableFormats=480p,720p,1080p&fields=contents,metadata`;
   } else if (platform === 'facebook') {
     endpoint = '/facebook/v3/post/details';
-    params = `?url=${encodeURIComponent(url)}&renderableFormats=144p,240p,360p,480p,720p,1080p&fields=contents,metadata`;
+    params = `?url=${encodeURIComponent(url)}&renderableFormats=480p,720p,1080p&fields=contents,metadata`;
   } else if (platform === 'tiktok') {
     endpoint = '/tiktok/v3/post/details';
     params = `?url=${encodeURIComponent(url)}&fields=contents,metadata`;
@@ -390,7 +390,7 @@ export async function getVideoInfo(url) {
     if (!match) throw new Error('Could not extract YouTube video ID');
     const videoId = match[1];
     endpoint = '/youtube/v3/video/details';
-    params = `?videoId=${videoId}&renderableFormats=144p,240p,360p,480p,720p,720p60,1080p,1080p60,1440p,2160p&urlAccess=normal&fields=contents,metadata`;
+    params = `?videoId=${videoId}&renderableFormats=480p,720p,1080p&urlAccess=normal&fields=contents,metadata`;
   } else if (platform === 'twitter') {
     endpoint = '/twitter/v3/post/details';
     params = `?url=${encodeURIComponent(url)}&fields=contents,metadata`;
