@@ -386,6 +386,55 @@ router.get('/proxy', async (req, res) => {
   }
 });
 
+// On-demand render for a specific video quality
+router.post('/render', async (req, res) => {
+  const { hashId, quality } = req.body;
+  if (!hashId) return res.status(400).json({ error: 'hashId required' });
+
+  const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
+  const RAPIDAPI_HOST = process.env.RAPIDAPI_HOST || 'social-media-video-downloader.p.rapidapi.com';
+
+  if (!RAPIDAPI_KEY) return res.status(500).json({ error: 'RAPIDAPI_KEY not set' });
+
+  try {
+    console.log(`[render] getting execution URL for hashId: ${hashId} quality: ${quality}`);
+
+    // Get renderable config for this specific video+quality
+    const renderRes = await fetch(
+      `https://${RAPIDAPI_HOST}/youtube/utils/renderable?hashId=${encodeURIComponent(hashId)}&quality=${encodeURIComponent(quality || '720p')}`,
+      {
+        headers: {
+          'x-rapidapi-key': RAPIDAPI_KEY,
+          'x-rapidapi-host': RAPIDAPI_HOST,
+        },
+        signal: AbortSignal.timeout(15000),
+      }
+    );
+
+    const renderData = await renderRes.json();
+    console.log('[render] renderable status:', renderRes.status);
+
+    const executionUrl = renderData.renderConfig?.executionUrl;
+    if (!executionUrl) {
+      console.error('[render] no executionUrl:', JSON.stringify(renderData).slice(0, 200));
+      return res.status(500).json({ error: 'No execution URL from API' });
+    }
+
+    // Trigger the render job
+    const execRes = await fetch(executionUrl, { signal: AbortSignal.timeout(15000) });
+    const execData = await execRes.json();
+    console.log('[render] job queued:', execData.renderId);
+
+    res.json({
+      renderId: execData.renderId,
+      sseStatusUrl: execData.sseStatusUrl,
+    });
+  } catch (e) {
+    console.error('[render] error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Poll RapidAPI render status via SSE
 router.get('/render-status', async (req, res) => {
   const { statusUrl } = req.query;
