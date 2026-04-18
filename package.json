@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "node --watch index.js",
-    "start": "node index.js",
+    "start": "node setup.js && node index.js",
     "postinstall": "node setup.js"
   },
   "dependencies": {
@@ -17,6 +17,7 @@
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "express-rate-limit": "^7.3.1",
+    "p-queue": "^9.1.2",
     "yt-dlp-wrap": "^2.3.12"
   }
 }
