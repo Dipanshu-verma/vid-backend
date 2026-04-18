@@ -125,13 +125,16 @@ if (existsSync(ytDlpPath)) {
   console.log('✅ yt-dlp already present');
 } else {
   console.log('⬇️  Downloading yt-dlp...');
-  try {
-    await YTDlpWrap.downloadFromGithub(ytDlpPath);
-    if (!isWin) chmodSync(ytDlpPath, '755');
-    console.log('✅ yt-dlp downloaded');
-  } catch (e) {
-    console.error('❌ yt-dlp download failed:', e.message);
-  }
+    try {
+      execSync(
+        `curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o ${ytDlpPath}`,
+        { stdio: 'inherit', timeout: 60000 }
+      );
+      chmodSync(ytDlpPath, '755');
+      console.log('✅ yt-dlp downloaded via curl');
+    } catch (e) {
+      console.error('❌ yt-dlp download failed:', e.message);
+    }
 }
 
 // Always update yt-dlp on deploy — YouTube blocks old versions aggressively
