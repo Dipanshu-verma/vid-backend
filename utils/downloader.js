@@ -202,65 +202,16 @@ async function getVideoInfoViaYtDlp(url, platform) {
   };
 }
 
-//export async function getVideoInfo(url) {
-//  const platform = detectPlatform(url);
-//
-//  // Non-YouTube: yt-dlp only
-//if (platform === 'youtube') {
-//  args.push(
-//    '--extractor-args',
-//    'youtube:player_client=ios,mweb;player_skip=webpage,configs'
-//  );
-//}
-//
-//  // YouTube: yt-dlp → Invidious → Piped
-//  console.log('[downloader] YouTube detected, trying yt-dlp first...');
-//
-//  try {
-//    const result = await getVideoInfoViaYtDlp(url, platform);
-//    console.log('[downloader] ✓ yt-dlp path succeeded');
-//    return result;
-//  } catch (ytDlpErr) {
-//    const msg = (ytDlpErr?.message || '').toLowerCase();
-//
-//    if (msg.includes('private video') || msg.includes('has been removed') || msg.includes('video unavailable')) {
-//      throw ytDlpErr;
-//    }
-//
-//    console.warn('[downloader] ✗ yt-dlp failed, trying Invidious/Piped fallback...');
-//
-//    try {
-//      const result = await getVideoInfoFromInvidious(url);
-//      console.log(`[downloader] ✓ fallback succeeded via ${result._source}`);
-//      return result;
-//    } catch (fallbackErr) {
-//      console.error('[downloader] ✗ all sources failed');
-//      // Throw yt-dlp error — more informative for debugging
-//      throw ytDlpErr;
-//    }
-//  }
-//}
-
-const cache = new Map();
-const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
-
 export async function getVideoInfo(url) {
   const platform = detectPlatform(url);
 
-  // Check cache first
-  const cacheKey = url.toLowerCase().trim();
-  const cached = cache.get(cacheKey);
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-    console.log('[cache] hit:', cacheKey.slice(0, 60));
-    return cached.data;
-  }
-
   // Non-YouTube: yt-dlp only
-  if (platform !== 'youtube') {
-    const result = await getVideoInfoViaYtDlp(url, platform);
-    cache.set(cacheKey, { data: result, timestamp: Date.now() });
-    return result;
-  }
+if (platform === 'youtube') {
+  args.push(
+    '--extractor-args',
+    'youtube:player_client=ios,mweb;player_skip=webpage,configs'
+  );
+}
 
   // YouTube: yt-dlp → Invidious → Piped
   console.log('[downloader] YouTube detected, trying yt-dlp first...');
@@ -268,7 +219,6 @@ export async function getVideoInfo(url) {
   try {
     const result = await getVideoInfoViaYtDlp(url, platform);
     console.log('[downloader] ✓ yt-dlp path succeeded');
-    cache.set(cacheKey, { data: result, timestamp: Date.now() });
     return result;
   } catch (ytDlpErr) {
     const msg = (ytDlpErr?.message || '').toLowerCase();
@@ -282,10 +232,10 @@ export async function getVideoInfo(url) {
     try {
       const result = await getVideoInfoFromInvidious(url);
       console.log(`[downloader] ✓ fallback succeeded via ${result._source}`);
-      cache.set(cacheKey, { data: result, timestamp: Date.now() });
       return result;
     } catch (fallbackErr) {
       console.error('[downloader] ✗ all sources failed');
+      // Throw yt-dlp error — more informative for debugging
       throw ytDlpErr;
     }
   }

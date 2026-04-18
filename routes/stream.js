@@ -521,31 +521,15 @@ router.get('/stream', (req, res) => {
   console.log(`[stream] Got ${urls.length} URL(s), starting ffmpeg...`);
 
   let ffmpegArgs;
-//  if (urls.length === 1) {
-//    ffmpegArgs = [
-//      '-i', urls[0],
-//      '-c', 'copy',
-//      '-movflags', '+faststart',
-//      '-metadata', `title=${filename}`,
-//      tmpFile,
-//    ];
-//  }
-// For direct piping (faster, no disk I/O)
-if (urls.length === 1) {
-  ffmpegArgs = [
-    '-i', urls[0],
-    '-c', 'copy',
-    '-movflags', 'frag_keyframe+empty_moov+faststart',
-    '-f', 'mp4', 'pipe:1',
-  ];
-
-  const ffmpeg = spawn(ffmpegPath, ffmpegArgs);
-  res.setHeader('Content-Type', 'video/mp4');
-  res.setHeader('Content-Disposition', `attachment; filename="${filename}.mp4"`);
-  ffmpeg.stdout.pipe(res);
-  return;
-}
-  else {
+  if (urls.length === 1) {
+    ffmpegArgs = [
+      '-i', urls[0],
+      '-c', 'copy',
+      '-movflags', '+faststart',
+      '-metadata', `title=${filename}`,
+      tmpFile,
+    ];
+  } else {
     ffmpegArgs = [
       '-i', urls[0],
       '-i', urls[1],

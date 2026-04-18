@@ -4,14 +4,11 @@ import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
 import downloadRouter from './routes/download.js';
 import streamRouter from './routes/stream.js';
-import PQueue from 'p-queue';
 
-// Max 3 concurrent streams
 dotenv.config();
 
 const app = express();
 const API_BASE_URL = process.env.API_BASE_URL;
-const streamQueue = new PQueue({ concurrency: 3 });
 
 // Must be first — Render sits behind a proxy and forwards X-Forwarded-For
 // Without this, express-rate-limit throws ERR_ERL_UNEXPECTED_X_FORWARDED_FOR

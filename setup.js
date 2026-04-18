@@ -125,26 +125,13 @@ if (existsSync(ytDlpPath)) {
   console.log('✅ yt-dlp already present');
 } else {
   console.log('⬇️  Downloading yt-dlp...');
-    try {
-      // Try direct download from GitHub releases
-      const { execSync } = await import('child_process');
-      execSync(
-        'curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o ' + ytDlpPath,
-        { stdio: 'inherit', timeout: 60000 }
-      );
-      chmodSync(ytDlpPath, '755');
-      console.log('✅ yt-dlp downloaded via curl');
-    } catch (e) {
-      console.error('❌ yt-dlp download failed:', e.message);
-      // Try yt-dlp-wrap as fallback
-      try {
-        await YTDlpWrap.downloadFromGithub(ytDlpPath);
-        if (!isWin) chmodSync(ytDlpPath, '755');
-        console.log('✅ yt-dlp downloaded via wrap');
-      } catch (e2) {
-        console.error('❌ yt-dlp wrap download also failed:', e2.message);
-      }
-    }
+  try {
+    await YTDlpWrap.downloadFromGithub(ytDlpPath);
+    if (!isWin) chmodSync(ytDlpPath, '755');
+    console.log('✅ yt-dlp downloaded');
+  } catch (e) {
+    console.error('❌ yt-dlp download failed:', e.message);
+  }
 }
 
 // Always update yt-dlp on deploy — YouTube blocks old versions aggressively
