@@ -315,11 +315,11 @@ export async function getVideoInfo(url) {
   const qualities = [];
 
   // renderableVideos — already merged video+audio
-  for (const v of renderableVideos) {
+for (const v of renderableVideos) {
     if (!v.renderConfig?.executionUrl) continue;
     qualities.push({
       label: v.label || v.metadata?.quality_label || 'Best Quality',
-      url: v.renderConfig.executionUrl,
+      url: v.renderConfig.executionUrl, // this is the execution URL
       ext: 'mp4',
       resolution: v.metadata?.quality_label || v.label,
       size: undefined,
