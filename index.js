@@ -9,7 +9,6 @@ dotenv.config();
 
 const app = express();
 const API_BASE_URL = process.env.API_BASE_URL;
-
 // Must be first — Render sits behind a proxy and forwards X-Forwarded-For
 // Without this, express-rate-limit throws ERR_ERL_UNEXPECTED_X_FORWARDED_FOR
 app.set('trust proxy', 1);
@@ -20,7 +19,12 @@ const allowedOrigins = (process.env.CLIENT_URL || '*')
 
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes('*')) return callback(null, true);
+    // Always allow Capacitor app and no-origin requests
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes('*')) return callback(null, true);
+    if (origin === 'https://localhost' || origin === 'http://localhost') return callback(null, true);
+    if (origin.startsWith('capacitor://')) return callback(null, true);
+
     const normalizedOrigin = origin.replace(/\/$/, '');
     if (allowedOrigins.includes(normalizedOrigin)) {
       callback(null, true);
