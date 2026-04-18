@@ -378,10 +378,10 @@ export async function getVideoInfo(url) {
     if (!match) throw new Error('Could not extract Instagram shortcode');
     const shortcode = match[2];
     endpoint = '/instagram/v3/media/post/details';
-    params = `?shortcode=${shortcode}&renderableFormats=480p,720p,1080p&fields=contents,metadata`;
+    params = `?shortcode=${shortcode}&fields=contents,metadata`;
   } else if (platform === 'facebook') {
     endpoint = '/facebook/v3/post/details';
-    params = `?url=${encodeURIComponent(url)}&renderableFormats=480p,720p,1080p&fields=contents,metadata`;
+    params = `?url=${encodeURIComponent(url)}&fields=contents,metadata`;
   } else if (platform === 'tiktok') {
     endpoint = '/tiktok/v3/post/details';
     params = `?url=${encodeURIComponent(url)}&fields=contents,metadata`;
@@ -390,7 +390,7 @@ export async function getVideoInfo(url) {
     if (!match) throw new Error('Could not extract YouTube video ID');
     const videoId = match[1];
     endpoint = '/youtube/v3/video/details';
-    params = `?videoId=${videoId}&renderableFormats=480p,720p,1080p&urlAccess=normal&fields=contents,metadata`;
+    params = `?videoId=${videoId}&fields=contents,metadata`;
   } else if (platform === 'twitter') {
     endpoint = '/twitter/v3/post/details';
     params = `?url=${encodeURIComponent(url)}&fields=contents,metadata`;
@@ -415,19 +415,43 @@ export async function getVideoInfo(url) {
   const author = data.metadata?.author?.name || undefined;
 
   const contents = data.contents?.[0] || {};
+  const videos = contents.videos || [];
   const renderableVideos = contents.renderableVideos || [];
 
   const qualities = [];
+  const seen = new Set();
 
-  // Only use renderableVideos — direct URLs get 403 Forbidden
+  // Use renderableVideos if available (already rendered)
   for (const v of renderableVideos) {
     if (!v.renderConfig?.executionUrl) continue;
+    const label = v.label || v.metadata?.quality_label || 'Best Quality';
+    if (seen.has(label)) continue;
+    seen.add(label);
     qualities.push({
-      label: v.label || v.metadata?.quality_label || 'Best Quality',
+      label,
       url: v.renderConfig.executionUrl,
       ext: 'mp4',
-      resolution: v.metadata?.quality_label || v.label,
+      resolution: v.metadata?.quality_label || label,
       size: v.metadata?.content_length_text || undefined,
+      _type: 'render',
+    });
+  }
+
+  // Use direct videos — store hashId for on-demand rendering
+  for (const v of videos) {
+    const label = v.label || v.metadata?.quality_label || 'Video';
+    if (seen.has(label)) continue;
+    seen.add(label);
+
+    // Store hashId for on-demand render via /api/render endpoint
+    qualities.push({
+      label,
+      url: v.url || '',
+      ext: 'mp4',
+      resolution: v.metadata?.quality_label || label,
+      size: v.metadata?.content_length_text || undefined,
+      hashId: v.hashId || '',
+      _type: 'direct',
     });
   }
 
