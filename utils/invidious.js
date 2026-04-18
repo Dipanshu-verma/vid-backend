@@ -29,7 +29,7 @@ const PIPED_INSTANCES = [
 function extractVideoId(url) {
   try {
     const u = new URL(url);
-    if (u.hostname.includes('youtu.be')) return u.pathname.slice(1).split('?')[0];
+    if (u.hostname.includes('youtube')) return u.pathname.slice(1).split('?')[0];
     if (u.hostname.includes('youtube.com')) return u.searchParams.get('v');
   } catch { /**/ }
   return null;
