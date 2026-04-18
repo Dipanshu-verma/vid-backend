@@ -362,7 +362,6 @@ const RAPIDAPI_HOST = process.env.RAPIDAPI_HOST || 'social-media-video-downloade
 
 export async function getVideoInfo(url) {
   const platform = detectPlatform(url);
-  const API = process.env.API_BASE_URL || 'http://localhost:3001';
 
   if (!RAPIDAPI_KEY) throw new Error('RAPIDAPI_KEY not set on server.');
 
@@ -417,40 +416,22 @@ export async function getVideoInfo(url) {
 
   const contents = data.contents?.[0] || {};
   const renderableVideos = contents.renderableVideos || [];
-  const videos = contents.videos || [];
 
   const qualities = [];
 
-// renderableVideos — server-rendered, merged video+audio
+  // Only use renderableVideos — direct URLs get 403 Forbidden
   for (const v of renderableVideos) {
     if (!v.renderConfig?.executionUrl) continue;
     qualities.push({
       label: v.label || v.metadata?.quality_label || 'Best Quality',
-      url: v.renderConfig.executionUrl, // render job URL
+      url: v.renderConfig.executionUrl,
       ext: 'mp4',
       resolution: v.metadata?.quality_label || v.label,
       size: v.metadata?.content_length_text || undefined,
     });
   }
 
-  // Direct video URLs — add any not already covered by renderableVideos
-  for (const v of videos) {
-    if (!v.url) continue;
-    const label = v.label || v.metadata?.quality_label || 'Video';
-    const alreadyExists = qualities.some(q => q.label === label);
-    if (alreadyExists) continue;
-
-    const streamUrl = `${API}/api/stream?url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}&videoUrl=${encodeURIComponent(v.url)}`;
-    qualities.push({
-      label,
-      url: streamUrl,
-      ext: 'mp4',
-      resolution: v.metadata?.quality_label || label,
-      size: v.metadata?.content_length_text || undefined,
-    });
-  }
-
-  if (qualities.length === 0) throw new Error('No downloadable links found for this video.');
+  if (qualities.length === 0) throw new Error('No downloadable links found. Try another video.');
 
   console.log(`[rapidapi] ✓ found ${qualities.length} qualities`);
 
