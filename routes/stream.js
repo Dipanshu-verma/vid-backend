@@ -349,27 +349,37 @@ router.get('/proxy', async (req, res) => {
   if (!url) return res.status(400).json({ error: 'url required' });
 
   try {
-    console.log('[proxy] downloading:', decodeURIComponent(url).slice(0, 80));
-    const response = await fetch(decodeURIComponent(url), {
+    const decodedUrl = decodeURIComponent(url);
+    console.log('[proxy] fetching:', decodedUrl.slice(0, 80));
+
+    const response = await fetch(decodedUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'video/mp4,video/*,*/*',
+        'Accept-Encoding': 'identity',
       },
       signal: AbortSignal.timeout(120000),
     });
 
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    if (!response.ok) throw new Error(`CDN returned HTTP ${response.status}`);
 
-    const contentType = response.headers.get('content-type') || 'video/mp4';
     const contentLength = response.headers.get('content-length');
+    const contentType = response.headers.get('content-type') || 'video/mp4';
 
-    res.setHeader('Content-Type', contentType);
+    console.log(`[proxy] size: ${contentLength} type: ${contentType}`);
+
+    res.setHeader('Content-Type', 'video/mp4');
     res.setHeader('Content-Disposition', `attachment; filename="${filename || 'video.mp4'}"`);
     if (contentLength) res.setHeader('Content-Length', contentLength);
     res.setHeader('Accept-Ranges', 'bytes');
     res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Access-Control-Allow-Origin', '*');
 
     response.body.pipe(res);
-    response.body.on('error', () => res.end());
+    response.body.on('error', (e) => {
+      console.error('[proxy] stream error:', e.message);
+      res.end();
+    });
   } catch (e) {
     console.error('[proxy] error:', e.message);
     if (!res.headersSent) res.status(500).json({ error: e.message });
