@@ -343,6 +343,39 @@ function safeFilename(title) {
     .slice(0, 80) || 'video';
 }
 
+// Proxy CDN download — avoids CORS/expiry issues
+router.get('/proxy', async (req, res) => {
+  const { url, filename } = req.query;
+  if (!url) return res.status(400).json({ error: 'url required' });
+
+  try {
+    console.log('[proxy] downloading:', decodeURIComponent(url).slice(0, 80));
+    const response = await fetch(decodeURIComponent(url), {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      },
+      signal: AbortSignal.timeout(120000),
+    });
+
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    const contentType = response.headers.get('content-type') || 'video/mp4';
+    const contentLength = response.headers.get('content-length');
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename || 'video.mp4'}"`);
+    if (contentLength) res.setHeader('Content-Length', contentLength);
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Cache-Control', 'no-cache');
+
+    response.body.pipe(res);
+    response.body.on('error', () => res.end());
+  } catch (e) {
+    console.error('[proxy] error:', e.message);
+    if (!res.headersSent) res.status(500).json({ error: e.message });
+  }
+});
+
 // Poll RapidAPI render status via SSE
 router.get('/render-status', async (req, res) => {
   const { statusUrl } = req.query;
@@ -368,7 +401,6 @@ router.get('/render-status', async (req, res) => {
         try {
           const data = JSON.parse(line.slice(5).trim());
           console.log(`[render-status] status: ${data.status} progress: ${data.progress}`);
-
           if (data.status === 'done' && data.output?.url) {
             console.log('[render-status] ✓ render complete');
             return res.json({ url: data.output.url });
@@ -379,7 +411,6 @@ router.get('/render-status', async (req, res) => {
         } catch {}
       }
     }
-
     res.status(500).json({ error: 'Render timeout or no output' });
   } catch (e) {
     console.error('[render-status] error:', e.message);
@@ -410,24 +441,19 @@ function streamViaFfmpeg(req, res, urls, filename) {
       ...reconnect, '-i', urls[0],
       '-c', 'copy',
       '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
-      '-f', 'mp4',
-      'pipe:1',
+      '-f', 'mp4', 'pipe:1',
     ];
   } else {
     ffmpegArgs = [
       ...reconnect, '-i', urls[0],
       ...reconnect, '-i', urls[1],
-      '-c:v', 'copy',
-      '-c:a', 'copy',
+      '-c:v', 'copy', '-c:a', 'copy',
       '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
-      '-f', 'mp4',
-      'pipe:1',
+      '-f', 'mp4', 'pipe:1',
     ];
   }
 
-  res.setHeader('Content-Disposition',
-    `attachment; filename="${filename}.mp4"; filename*=UTF-8''${encodeURIComponent(filename + '.mp4')}`
-  );
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}.mp4"; filename*=UTF-8''${encodeURIComponent(filename + '.mp4')}`);
   res.setHeader('Content-Type', 'video/mp4');
   res.setHeader('Transfer-Encoding', 'chunked');
   res.setHeader('X-Accel-Buffering', 'no');
@@ -436,7 +462,6 @@ function streamViaFfmpeg(req, res, urls, filename) {
   res.setHeader('Keep-Alive', 'timeout=300');
 
   const ffmpeg = spawn(ffmpegPath, ffmpegArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
-
   ffmpeg.stdout.pipe(res);
 
   ffmpeg.stderr.on('data', d => {
