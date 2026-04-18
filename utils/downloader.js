@@ -11,8 +11,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const isWin = process.platform === 'win32';
 const binPath = join(__dirname, '..', 'bin', isWin ? 'yt-dlp.exe' : 'yt-dlp');
 const cookiesPath = join(__dirname, '..', 'bin', 'cookies.txt');
-const cache = new Map();
-const CACHE_TTL = 30 * 60 * 1000;
 
 function getYtDlp() {
   if (!existsSync(binPath)) throw new Error('yt-dlp binary not found.');
