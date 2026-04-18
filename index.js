@@ -38,7 +38,12 @@ app.use(cors({
 }));
 
 app.use(express.json());
-
+// Increase timeout for slow API calls
+app.use((req, res, next) => {
+  req.setTimeout(120000);
+  res.setTimeout(120000);
+  next();
+});
 const limiter = rateLimit({
   windowMs: 60 * 1000,
   max: 20,

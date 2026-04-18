@@ -402,7 +402,7 @@ export async function getVideoInfo(url) {
 
   const res = await fetch(
     `https://${RAPIDAPI_HOST}${endpoint}${params}`,
-    { headers, signal: AbortSignal.timeout(30000) }
+    { headers, signal: AbortSignal.timeout(60000) }
   );
 
   const data = await res.json();
