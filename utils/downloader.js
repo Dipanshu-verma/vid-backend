@@ -473,28 +473,35 @@ import { detectPlatform } from './platform.js';
 
 const COBALT_INSTANCES = [
   'https://api.cobalt.tools',
+  'https://cobalt.imput.net',
+  'https://co.wuk.sh',
+  'https://cobalt.yt',
   'https://cobalt.api.timurs.de',
   'https://cobalt-api.kwiatekmiki.com',
+  'https://cobalt.drgon.me',
+  'https://cobalt.permahome.eu',
 ];
 
 async function tryCobal(url, quality = 'max') {
   for (const instance of COBALT_INSTANCES) {
     try {
       console.log(`[cobalt] trying: ${instance}`);
-      const res = await fetch(`${instance}/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: JSON.stringify({
-          url,
-          videoQuality: quality,
-          filenameStyle: 'basic',
-          downloadMode: 'auto',
-        }),
-        signal: AbortSignal.timeout(15000),
-      });
+     const res = await fetch(`${instance}/`, {
+       method: 'POST',
+       headers: {
+         'Content-Type': 'application/json',
+         'Accept': 'application/json',
+       },
+       body: JSON.stringify({
+         url,
+         videoQuality: quality === 'max' ? '9000' : quality,
+         filenameStyle: 'basic',
+         downloadMode: 'auto',
+         twitterGif: false,
+         youtubeHLS: false,
+       }),
+       signal: AbortSignal.timeout(15000),
+     });
 
       const data = await res.json();
       console.log(`[cobalt] status: ${data.status}`);
