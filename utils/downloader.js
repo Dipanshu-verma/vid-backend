@@ -355,227 +355,117 @@
 //  };
 //}
 
-//import { detectPlatform } from './platform.js';
-//
-//const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
-//const RAPIDAPI_HOST = process.env.RAPIDAPI_HOST || 'social-media-video-downloader.p.rapidapi.com';
-//
-//export async function getVideoInfo(url) {
-//  const platform = detectPlatform(url);
-//
-//  if (!RAPIDAPI_KEY) throw new Error('RAPIDAPI_KEY not set on server.');
-//
-//  const headers = {
-//    'x-rapidapi-key': RAPIDAPI_KEY,
-//    'x-rapidapi-host': RAPIDAPI_HOST,
-//  };
-//
-//  let endpoint = '';
-//  let params = '';
-//
-//  if (platform === 'instagram') {
-//    const match = url.match(/\/(p|reel|tv)\/([A-Za-z0-9_-]+)/);
-//    if (!match) throw new Error('Could not extract Instagram shortcode');
-//    const shortcode = match[2];
-//    endpoint = '/instagram/v3/media/post/details';
-//    params = `?shortcode=${shortcode}&fields=contents,metadata`;
-//  } else if (platform === 'facebook') {
-//    endpoint = '/facebook/v3/post/details';
-//    params = `?url=${encodeURIComponent(url)}&fields=contents,metadata`;
-//  } else if (platform === 'tiktok') {
-//    endpoint = '/tiktok/v3/post/details';
-//    params = `?url=${encodeURIComponent(url)}&fields=contents,metadata`;
-//  } else if (platform === 'youtube') {
-//    const match = url.match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{11})/);
-//    if (!match) throw new Error('Could not extract YouTube video ID');
-//    const videoId = match[1];
-//    endpoint = '/youtube/v3/video/details';
-//    params = `?videoId=${videoId}&fields=contents,metadata`;
-//  } else if (platform === 'twitter') {
-//    endpoint = '/twitter/v3/post/details';
-//    params = `?url=${encodeURIComponent(url)}&fields=contents,metadata`;
-//  } else {
-//    throw new Error('Unsupported platform. Supported: YouTube, Instagram, Facebook, TikTok, Twitter.');
-//  }
-//
-//  console.log(`[rapidapi] ${platform} → ${endpoint}`);
-//
-//  const res = await fetch(
-//    `https://${RAPIDAPI_HOST}${endpoint}${params}`,
-//    { headers, signal: AbortSignal.timeout(60000) }
-//  );
-//
-//  const data = await res.json();
-//  console.log(`[rapidapi] status: ${res.status}`);
-//
-//  if (!res.ok) throw new Error(data.message || `RapidAPI error: ${res.status}`);
-//
-//  const title = data.metadata?.title || data.metadata?.author?.name || 'Video';
-//  const thumbnail = data.metadata?.thumbnailUrl || data.metadata?.thumbnail || '';
-//  const author = data.metadata?.author?.name || undefined;
-//
-//  const contents = data.contents?.[0] || {};
-//  const videos = contents.videos || [];
-//  const renderableVideos = contents.renderableVideos || [];
-//
-//  const qualities = [];
-//  const seen = new Set();
-//
-//  // Use renderableVideos if available (already rendered)
-//  for (const v of renderableVideos) {
-//    if (!v.renderConfig?.executionUrl) continue;
-//    const label = v.label || v.metadata?.quality_label || 'Best Quality';
-//    if (seen.has(label)) continue;
-//    seen.add(label);
-//    qualities.push({
-//      label,
-//      url: v.renderConfig.executionUrl,
-//      ext: 'mp4',
-//      resolution: v.metadata?.quality_label || label,
-//      size: v.metadata?.content_length_text || undefined,
-//      _type: 'render',
-//    });
-//  }
-//
-//  // Use direct videos — store hashId for on-demand rendering
-//  for (const v of videos) {
-//    const label = v.label || v.metadata?.quality_label || 'Video';
-//    if (seen.has(label)) continue;
-//    seen.add(label);
-//
-//    // Store hashId for on-demand render via /api/render endpoint
-//    qualities.push({
-//      label,
-//      url: v.url || '',
-//      ext: 'mp4',
-//      resolution: v.metadata?.quality_label || label,
-//      size: v.metadata?.content_length_text || undefined,
-//      hashId: v.hashId || '',
-//      _type: 'direct',
-//    });
-//  }
-//
-//  if (qualities.length === 0) throw new Error('No downloadable links found. Try another video.');
-//
-//  console.log(`[rapidapi] ✓ found ${qualities.length} qualities`);
-//
-//  return {
-//    platform,
-//    title,
-//    thumbnail,
-//    author,
-//    qualities,
-//    _source: 'rapidapi',
-//  };
-//}
-
 import { detectPlatform } from './platform.js';
 
-const COBALT_INSTANCES = [
-  'https://api.cobalt.tools',
-  'https://cobalt.imput.net',
-  'https://co.wuk.sh',
-  'https://cobalt.yt',
-  'https://cobalt.api.timurs.de',
-  'https://cobalt-api.kwiatekmiki.com',
-  'https://cobalt.drgon.me',
-  'https://cobalt.permahome.eu',
-];
-
-async function tryCobal(url, quality = 'max') {
-  for (const instance of COBALT_INSTANCES) {
-    try {
-      console.log(`[cobalt] trying: ${instance}`);
-     const res = await fetch(`${instance}/`, {
-       method: 'POST',
-       headers: {
-         'Content-Type': 'application/json',
-         'Accept': 'application/json',
-       },
-       body: JSON.stringify({
-         url,
-         videoQuality: quality === 'max' ? '9000' : quality,
-         filenameStyle: 'basic',
-         downloadMode: 'auto',
-         twitterGif: false,
-         youtubeHLS: false,
-       }),
-       signal: AbortSignal.timeout(15000),
-     });
-
-      const data = await res.json();
-      console.log(`[cobalt] status: ${data.status}`);
-
-      if (data.status === 'error') continue;
-      if (!['stream', 'redirect', 'tunnel'].includes(data.status)) continue;
-      if (!data.url) continue;
-
-      console.log(`[cobalt] ✓ success via ${instance}`);
-      return data.url;
-    } catch (e) {
-      console.error(`[cobalt] ${instance} failed:`, e.message);
-      continue;
-    }
-  }
-  throw new Error('All Cobalt instances failed');
-}
+const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
+const RAPIDAPI_HOST = process.env.RAPIDAPI_HOST || 'social-media-video-downloader.p.rapidapi.com';
 
 export async function getVideoInfo(url) {
   const platform = detectPlatform(url);
-  const API = process.env.API_BASE_URL || 'http://localhost:3001';
 
-  let videoId = '';
-  if (platform === 'youtube') {
+  if (!RAPIDAPI_KEY) throw new Error('RAPIDAPI_KEY not set on server.');
+
+  const headers = {
+    'x-rapidapi-key': RAPIDAPI_KEY,
+    'x-rapidapi-host': RAPIDAPI_HOST,
+  };
+
+  let endpoint = '';
+  let params = '';
+
+  if (platform === 'instagram') {
+    const match = url.match(/\/(p|reel|tv)\/([A-Za-z0-9_-]+)/);
+    if (!match) throw new Error('Could not extract Instagram shortcode');
+    const shortcode = match[2];
+    endpoint = '/instagram/v3/media/post/details';
+    params = `?shortcode=${shortcode}&fields=contents,metadata`;
+  } else if (platform === 'facebook') {
+    endpoint = '/facebook/v3/post/details';
+    params = `?url=${encodeURIComponent(url)}&fields=contents,metadata`;
+  } else if (platform === 'tiktok') {
+    endpoint = '/tiktok/v3/post/details';
+    params = `?url=${encodeURIComponent(url)}&fields=contents,metadata`;
+  } else if (platform === 'youtube') {
     const match = url.match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{11})/);
-    if (match) videoId = match[1];
+    if (!match) throw new Error('Could not extract YouTube video ID');
+    const videoId = match[1];
+    endpoint = '/youtube/v3/video/details';
+    params = `?videoId=${videoId}&fields=contents,metadata`;
+  } else if (platform === 'twitter') {
+    endpoint = '/twitter/v3/post/details';
+    params = `?url=${encodeURIComponent(url)}&fields=contents,metadata`;
+  } else {
+    throw new Error('Unsupported platform. Supported: YouTube, Instagram, Facebook, TikTok, Twitter.');
   }
 
-  console.log(`[downloader] ${platform} → cobalt`);
+  console.log(`[rapidapi] ${platform} → ${endpoint}`);
 
-  // Get download URLs for different qualities
-  const qualityOptions = platform === 'youtube'
-    ? ['max', '1080', '720', '480', '360']
-    : ['max'];
+  const res = await fetch(
+    `https://${RAPIDAPI_HOST}${endpoint}${params}`,
+    { headers, signal: AbortSignal.timeout(60000) }
+  );
+
+  const data = await res.json();
+  console.log(`[rapidapi] status: ${res.status}`);
+
+  if (!res.ok) throw new Error(data.message || `RapidAPI error: ${res.status}`);
+
+  const title = data.metadata?.title || data.metadata?.author?.name || 'Video';
+  const thumbnail = data.metadata?.thumbnailUrl || data.metadata?.thumbnail || '';
+  const author = data.metadata?.author?.name || undefined;
+
+  const contents = data.contents?.[0] || {};
+  const videos = contents.videos || [];
+  const renderableVideos = contents.renderableVideos || [];
 
   const qualities = [];
   const seen = new Set();
 
-  for (const q of qualityOptions) {
-    try {
-      const cobaltUrl = await tryCobal(url, q);
-      const label = q === 'max' ? 'Best Quality' : `${q}p`;
-      if (seen.has(label)) continue;
-      seen.add(label);
-
-      const streamUrl = `${API}/api/stream?url=${encodeURIComponent(url)}&title=video&videoUrl=${encodeURIComponent(cobaltUrl)}`;
-      qualities.push({
-        label,
-        url: streamUrl,
-        ext: 'mp4',
-        resolution: label,
-        size: undefined,
-      });
-
-      // Only try max quality for non-YouTube — they usually have one quality
-      if (platform !== 'youtube') break;
-    } catch (e) {
-      console.error(`[cobalt] quality ${q} failed:`, e.message);
-      break;
-    }
+  // Use renderableVideos if available (already rendered)
+  for (const v of renderableVideos) {
+    if (!v.renderConfig?.executionUrl) continue;
+    const label = v.label || v.metadata?.quality_label || 'Best Quality';
+    if (seen.has(label)) continue;
+    seen.add(label);
+    qualities.push({
+      label,
+      url: v.renderConfig.executionUrl,
+      ext: 'mp4',
+      resolution: v.metadata?.quality_label || label,
+      size: v.metadata?.content_length_text || undefined,
+      _type: 'render',
+    });
   }
 
-  if (qualities.length === 0) throw new Error('Could not fetch video. Try another URL.');
+  // Use direct videos — store hashId for on-demand rendering
+  for (const v of videos) {
+    const label = v.label || v.metadata?.quality_label || 'Video';
+    if (seen.has(label)) continue;
+    seen.add(label);
 
-  const thumbnail = videoId
-    ? `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`
-    : '';
+    // Store hashId for on-demand render via /api/render endpoint
+    qualities.push({
+      label,
+      url: v.url || '',
+      ext: 'mp4',
+      resolution: v.metadata?.quality_label || label,
+      size: v.metadata?.content_length_text || undefined,
+      hashId: v.hashId || '',
+      _type: 'direct',
+    });
+  }
+
+  if (qualities.length === 0) throw new Error('No downloadable links found. Try another video.');
+
+  console.log(`[rapidapi] ✓ found ${qualities.length} qualities`);
 
   return {
     platform,
-    title: 'Video',
+    title,
     thumbnail,
-    author: undefined,
+    author,
     qualities,
-    _source: 'cobalt',
+    _source: 'rapidapi',
   };
 }
+
