@@ -284,7 +284,8 @@ export async function getVideoInfo(url) {
     if (!match) throw new Error('Could not extract YouTube video ID');
     const videoId = match[1];
     endpoint = '/youtube/v3/video/details';
-    params = `?videoId=${videoId}&renderableFormats=144p,240p,360p,480p,720p,1080p,1440p,2160p&urlAccess=normal`;
+    params = `?videoId=${videoId}&renderableFormats=720p,1080p,1440p,2160p&urlAccess=normal`;
+//    params = `?videoId=${videoId}&renderableFormats=144p,240p,360p,480p,720p,1080p,1440p,2160p&urlAccess=normal`;
   } else if (platform === 'twitter') {
     endpoint = '/twitter/v3/post/details';
     params = `?url=${encodeURIComponent(url)}`;
