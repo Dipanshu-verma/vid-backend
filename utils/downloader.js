@@ -387,7 +387,9 @@ export async function getVideoInfo(url) {
     endpoint = '/tiktok/v3/post/details';
     params = `?url=${encodeURIComponent(url)}&fields=contents,metadata`;
   } else if (platform === 'youtube') {
-    const match = url.match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+//    const match = url.match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+  const match = url.match(/(?:v=|youtu\.be\/|shorts\/)([A-Za-z0-9_-]{11})/);
+
     if (!match) throw new Error('Could not extract YouTube video ID');
     const videoId = match[1];
     endpoint = '/youtube/v3/video/details';
