@@ -241,21 +241,128 @@
 //  }
 //}
 
+//import { detectPlatform } from './platform.js';
+//
+//const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
+//const RAPIDAPI_HOST = process.env.RAPIDAPI_HOST || 'social-media-video-downloader.p.rapidapi.com';
+//
+//function formatSize(bytes) {
+//  if (!bytes || bytes <= 0) return undefined;
+//  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+//  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+//  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+//}
+//
+//export async function getVideoInfo(url) {
+//  const platform = detectPlatform(url);
+//  const API = process.env.API_BASE_URL || 'http://localhost:3001';
+//
+//  if (!RAPIDAPI_KEY) throw new Error('RAPIDAPI_KEY not set on server.');
+//
+//  const headers = {
+//    'x-rapidapi-key': RAPIDAPI_KEY,
+//    'x-rapidapi-host': RAPIDAPI_HOST,
+//  };
+//
+//  let endpoint = '';
+//  let params = '';
+//
+// if (platform === 'instagram') {
+//     const match = url.match(/\/(p|reel|tv)\/([A-Za-z0-9_-]+)/);
+//     if (!match) throw new Error('Could not extract Instagram shortcode');
+//     const shortcode = match[2];
+//     endpoint = '/instagram/v3/media/post/details';
+//     params = `?shortcode=${shortcode}&renderableFormats=144p,240p,360p,480p,720p,1080p`;
+//   } else if (platform === 'facebook') {
+//     endpoint = '/facebook/v3/post/details';
+//     params = `?url=${encodeURIComponent(url)}&renderableFormats=144p,240p,360p,480p,720p,1080p`;
+//  } else if (platform === 'tiktok') {
+//    endpoint = '/tiktok/v3/post/details';
+//    params = `?url=${encodeURIComponent(url)}`;
+//} else if (platform === 'youtube') {
+//    const match = url.match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+//    if (!match) throw new Error('Could not extract YouTube video ID');
+//    const videoId = match[1];
+//    endpoint = '/youtube/v3/video/details';
+//    params = `?videoId=${videoId}&renderableFormats=720p,1080p,1440p,2160p&urlAccess=normal`;
+////    params = `?videoId=${videoId}&renderableFormats=144p,240p,360p,480p,720p,1080p,1440p,2160p&urlAccess=normal`;
+//  } else if (platform === 'twitter') {
+//    endpoint = '/twitter/v3/post/details';
+//    params = `?url=${encodeURIComponent(url)}`;
+//  } else {
+//    throw new Error('Unsupported platform. Supported: YouTube, Instagram, Facebook, TikTok, Twitter.');
+//  }
+//
+//  console.log(`[rapidapi] ${platform} → ${endpoint}`);
+//
+//  const res = await fetch(
+//    `https://${RAPIDAPI_HOST}${endpoint}${params}`,
+//    { headers, signal: AbortSignal.timeout(30000) }
+//  );
+//
+//  const data = await res.json();
+//  console.log(`[rapidapi] status: ${res.status}`);
+//
+//  if (!res.ok) throw new Error(data.message || `RapidAPI error: ${res.status}`);
+//
+//  const title = data.metadata?.title || data.metadata?.author?.name || 'Video';
+//  const thumbnail = data.metadata?.thumbnailUrl || data.metadata?.thumbnail || '';
+//  const author = data.metadata?.author?.name || undefined;
+//
+//  const contents = data.contents?.[0] || {};
+//  const renderableVideos = contents.renderableVideos || [];
+//  const videos = contents.videos || [];
+//
+//  const qualities = [];
+//
+//  // renderableVideos — already merged video+audio
+//for (const v of renderableVideos) {
+//    if (!v.renderConfig?.executionUrl) continue;
+//    qualities.push({
+//      label: v.label || v.metadata?.quality_label || 'Best Quality',
+//      url: v.renderConfig.executionUrl, // this is the execution URL
+//      ext: 'mp4',
+//      resolution: v.metadata?.quality_label || v.label,
+//      size: undefined,
+//    });
+//  }
+//
+//  // Direct video URLs fallback
+//  if (qualities.length === 0) {
+//    for (const v of videos) {
+//      if (!v.url) continue;
+//      const streamUrl = `${API}/api/stream?url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}&videoUrl=${encodeURIComponent(v.url)}`;
+//      qualities.push({
+//        label: v.label || v.metadata?.quality_label || 'Best Quality',
+//        url: streamUrl,
+//        ext: 'mp4',
+//        resolution: v.metadata?.quality_label || v.label,
+//        size: v.metadata?.content_length_text || undefined,
+//      });
+//    }
+//  }
+//
+//  if (qualities.length === 0) throw new Error('No downloadable links found for this video.');
+//
+//  console.log(`[rapidapi] ✓ found ${qualities.length} qualities`);
+//
+//  return {
+//    platform,
+//    title,
+//    thumbnail,
+//    author,
+//    qualities,
+//    _source: 'rapidapi',
+//  };
+//}
+
 import { detectPlatform } from './platform.js';
 
 const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
 const RAPIDAPI_HOST = process.env.RAPIDAPI_HOST || 'social-media-video-downloader.p.rapidapi.com';
 
-function formatSize(bytes) {
-  if (!bytes || bytes <= 0) return undefined;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-}
-
 export async function getVideoInfo(url) {
   const platform = detectPlatform(url);
-  const API = process.env.API_BASE_URL || 'http://localhost:3001';
 
   if (!RAPIDAPI_KEY) throw new Error('RAPIDAPI_KEY not set on server.');
 
@@ -267,28 +374,27 @@ export async function getVideoInfo(url) {
   let endpoint = '';
   let params = '';
 
- if (platform === 'instagram') {
-     const match = url.match(/\/(p|reel|tv)\/([A-Za-z0-9_-]+)/);
-     if (!match) throw new Error('Could not extract Instagram shortcode');
-     const shortcode = match[2];
-     endpoint = '/instagram/v3/media/post/details';
-     params = `?shortcode=${shortcode}&renderableFormats=144p,240p,360p,480p,720p,1080p`;
-   } else if (platform === 'facebook') {
-     endpoint = '/facebook/v3/post/details';
-     params = `?url=${encodeURIComponent(url)}&renderableFormats=144p,240p,360p,480p,720p,1080p`;
+  if (platform === 'instagram') {
+    const match = url.match(/\/(p|reel|tv)\/([A-Za-z0-9_-]+)/);
+    if (!match) throw new Error('Could not extract Instagram shortcode');
+    const shortcode = match[2];
+    endpoint = '/instagram/v3/media/post/details';
+    params = `?shortcode=${shortcode}&renderableFormats=720p,1080p&fields=contents,metadata`;
+  } else if (platform === 'facebook') {
+    endpoint = '/facebook/v3/post/details';
+    params = `?url=${encodeURIComponent(url)}&renderableFormats=720p,1080p&fields=contents,metadata`;
   } else if (platform === 'tiktok') {
     endpoint = '/tiktok/v3/post/details';
-    params = `?url=${encodeURIComponent(url)}`;
-} else if (platform === 'youtube') {
+    params = `?url=${encodeURIComponent(url)}&fields=contents,metadata`;
+  } else if (platform === 'youtube') {
     const match = url.match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{11})/);
     if (!match) throw new Error('Could not extract YouTube video ID');
     const videoId = match[1];
     endpoint = '/youtube/v3/video/details';
-    params = `?videoId=${videoId}&renderableFormats=720p,1080p,1440p,2160p&urlAccess=normal`;
-//    params = `?videoId=${videoId}&renderableFormats=144p,240p,360p,480p,720p,1080p,1440p,2160p&urlAccess=normal`;
+    params = `?videoId=${videoId}&renderableFormats=720p,1080p,1440p,2160p&urlAccess=normal&fields=contents,metadata`;
   } else if (platform === 'twitter') {
     endpoint = '/twitter/v3/post/details';
-    params = `?url=${encodeURIComponent(url)}`;
+    params = `?url=${encodeURIComponent(url)}&fields=contents,metadata`;
   } else {
     throw new Error('Unsupported platform. Supported: YouTube, Instagram, Facebook, TikTok, Twitter.');
   }
@@ -297,7 +403,7 @@ export async function getVideoInfo(url) {
 
   const res = await fetch(
     `https://${RAPIDAPI_HOST}${endpoint}${params}`,
-    { headers, signal: AbortSignal.timeout(30000) }
+    { headers, signal: AbortSignal.timeout(90000) }
   );
 
   const data = await res.json();
@@ -311,35 +417,27 @@ export async function getVideoInfo(url) {
 
   const contents = data.contents?.[0] || {};
   const renderableVideos = contents.renderableVideos || [];
-  const videos = contents.videos || [];
 
   const qualities = [];
+  const seenLabels = new Set();
 
-  // renderableVideos — already merged video+audio
-for (const v of renderableVideos) {
+  // ONLY use renderableVideos — they have merged audio+video
+  // Direct videos array is skipped — no audio
+  for (const v of renderableVideos) {
     if (!v.renderConfig?.executionUrl) continue;
-    qualities.push({
-      label: v.label || v.metadata?.quality_label || 'Best Quality',
-      url: v.renderConfig.executionUrl, // this is the execution URL
-      ext: 'mp4',
-      resolution: v.metadata?.quality_label || v.label,
-      size: undefined,
-    });
-  }
+    const label = v.label || v.metadata?.quality_label || 'Best Quality';
 
-  // Direct video URLs fallback
-  if (qualities.length === 0) {
-    for (const v of videos) {
-      if (!v.url) continue;
-      const streamUrl = `${API}/api/stream?url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}&videoUrl=${encodeURIComponent(v.url)}`;
-      qualities.push({
-        label: v.label || v.metadata?.quality_label || 'Best Quality',
-        url: streamUrl,
-        ext: 'mp4',
-        resolution: v.metadata?.quality_label || v.label,
-        size: v.metadata?.content_length_text || undefined,
-      });
-    }
+    // Deduplicate by label
+    if (seenLabels.has(label)) continue;
+    seenLabels.add(label);
+
+    qualities.push({
+      label,
+      url: v.renderConfig.executionUrl,
+      ext: 'mp4',
+      resolution: v.metadata?.quality_label || label,
+      size: v.metadata?.content_length_text || undefined,
+    });
   }
 
   if (qualities.length === 0) throw new Error('No downloadable links found for this video.');
