@@ -54,7 +54,9 @@ app.use('/api', limiter);
 app.use('/api', downloadRouter);
 app.use('/api', streamRouter);
 
-app.get('/health', (_req, res) => res.json({ status: 'ok' }));
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: Date.now() });
+});
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
