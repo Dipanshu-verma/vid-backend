@@ -283,25 +283,26 @@ async function getVideoInfoFromNewAPI(url) {
   const qualities = [];
   const seenLabels = new Set();
 
-  // Filter only mp4 videos with audio
-  for (const m of data.medias) {
-    if (m.type !== 'video') continue;
-    if (!m.url) continue;
-    if (m.extension && m.extension !== 'mp4') continue;
+// Filter only mp4 videos with audio merged
+for (const m of data.medias) {
+  if (m.type !== 'video') continue;
+  if (!m.url) continue;
+  if (!m.is_audio) continue; // skip video-only streams
+  if (m.extension && m.extension !== 'mp4') continue;
 
-    const label = m.quality || m.resolution || 'Best Quality';
-    if (seenLabels.has(label)) continue;
-    seenLabels.add(label);
+  const label = m.quality || m.resolution || 'Best Quality';
+  if (seenLabels.has(label)) continue;
+  seenLabels.add(label);
 
-    qualities.push({
-      label,
-      url: m.url,
-      ext: 'mp4',
-      resolution: m.resolution || label,
-      size: m.size || undefined,
-      _direct: true, // direct URL — no render needed
-    });
-  }
+  qualities.push({
+    label,
+    url: m.url,
+    ext: 'mp4',
+    resolution: m.resolution || label,
+    size: m.size || undefined,
+    _direct: true,
+  });
+}
 
   // If no video-with-audio found, try first video anyway
   if (qualities.length === 0) {
