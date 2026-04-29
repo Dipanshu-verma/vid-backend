@@ -474,15 +474,15 @@ export async function getVideoInfo(url) {
   console.log(`[yt-dlp] ${platform} → ${url.slice(0, 60)}`);
 
   try {
-    const args = [
-      url,
-      '--dump-json',
-      '--no-playlist',
-      '--no-warnings',
-      '--proxy', PROXY,
-      '--add-header', 'user-agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0',
-    ];
-
+  const args = [
+    url,
+    '--dump-json',
+    '--no-playlist',
+    '--no-warnings',
+    '--proxy', PROXY,
+    '--extractor-args', 'youtube:player_client=android',
+    '--add-header', 'user-agent:Mozilla/5.0 (Linux; Android 11) AppleWebKit/537.36',
+  ];
     const { stdout } = await execFileAsync(binPath, args, { timeout: 60000 });
     const data = JSON.parse(stdout.trim());
 
