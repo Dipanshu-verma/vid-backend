@@ -96,6 +96,7 @@ router.post('/download', async (req, res) => {
 
   try {
     const info = await getVideoInfo(cleanedUrl);
+    console.log(`[download] ✅ served via ${info._source}`);
     return res.json(info);
   } catch (err) {
     const msg = err?.message || '';
