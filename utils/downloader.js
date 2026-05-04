@@ -527,13 +527,23 @@ async function tryRapidAPI(url, platform) {
   let params = '';
 
   if (platform === 'instagram') {
-    const match = url.match(/\/(p|reel|tv)\/([A-Za-z0-9_-]+)/);
+//    const match = url.match(/\/(p|reel|tv)\/([A-Za-z0-9_-]+)/);
+//    if (!match) throw new Error('Could not extract Instagram shortcode');
+//    endpoint = '/instagram/v3/media/post/details';
+//    params = `?shortcode=${match[2]}&renderableFormats=720p,1080p&fields=contents,metadata`;
+  const match = url.match(/\/(?:p|reel|tv|reels)\/([A-Za-z0-9_-]+)/);
     if (!match) throw new Error('Could not extract Instagram shortcode');
+    const shortcode = match[1];
     endpoint = '/instagram/v3/media/post/details';
-    params = `?shortcode=${match[2]}&renderableFormats=720p,1080p&fields=contents,metadata`;
+    params = `?shortcode=${shortcode}&renderableFormats=720p,1080p,highres&fields=contents,metadata`;
   } else if (platform === 'facebook') {
-    endpoint = '/facebook/v3/post/details';
-    params = `?url=${encodeURIComponent(url)}&renderableFormats=720p,1080p&fields=contents,metadata`;
+   let fbUrl = url;
+
+      // Normalize share URLs — pass as-is, API handles them
+      endpoint = '/facebook/v3/post/details';
+      params = `?url=${encodeURIComponent(fbUrl)}&renderableFormats=720p,1080p,highres&fields=contents,metadata`;
+//    endpoint = '/facebook/v3/post/details';
+//    params = `?url=${encodeURIComponent(url)}&renderableFormats=720p,1080p&fields=contents,metadata`;
   } else if (platform === 'tiktok') {
     endpoint = '/tiktok/v3/post/details';
     params = `?url=${encodeURIComponent(url)}&fields=contents,metadata`;
