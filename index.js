@@ -58,7 +58,24 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: Date.now() });
 });
 
+//const PORT = process.env.PORT || 3001;
+//app.listen(PORT, () => {
+//  console.log(`✅ VidSave server running on http://localhost:${PORT}`);
+//});
+
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`✅ VidSave server running on http://localhost:${PORT}`);
+
+  // Start keep-alive after 1 minute delay (let server fully start first)
+  setTimeout(() => {
+    setInterval(async () => {
+      try {
+        await fetch(`${SELF_URL}/health`);
+        console.log('[keep-alive] ✓ pinged');
+      } catch (e) {
+        console.log('[keep-alive] ✗ failed:', e.message);
+      }
+    }, 14 * 60 * 1000);
+  }, 60000);
 });
