@@ -155,44 +155,33 @@ router.get('/proxy', async (req, res) => {
 
   try {
     const decodedUrl = decodeURIComponent(url);
-    const isAudio = filename?.endsWith('.mp3') || filename?.endsWith('.m4a');
-    const isRapidApiUrl = decodedUrl.includes('smvd.xyz') ||
-                          decodedUrl.includes('rapidapi') ||
-                          decodedUrl.includes('redirector');
-
     console.log('[proxy] fetching:', decodedUrl.slice(0, 80));
 
-    const headers = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      'Accept': isAudio ? 'audio/*,*/*' : 'video/mp4,video/*,*/*',
-      'Accept-Encoding': 'identity',
-    };
-
-    // Add RapidAPI headers for their CDN/redirector URLs
-    if (isRapidApiUrl && process.env.RAPIDAPI_KEY) {
-      headers['x-rapidapi-key'] = process.env.RAPIDAPI_KEY;
-      headers['x-rapidapi-host'] = process.env.RAPIDAPI_HOST ||
-        'social-media-video-downloader.p.rapidapi.com';
-    }
-
     const response = await fetch(decodedUrl, {
-      headers,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'video/mp4,video/*,*/*',
+        'Accept-Encoding': 'identity',
+      },
       signal: AbortSignal.timeout(120000),
     });
 
     if (!response.ok) throw new Error(`CDN returned HTTP ${response.status}`);
 
     const contentLength = response.headers.get('content-length');
-    const contentType = isAudio ? 'audio/mpeg' : 'video/mp4';
+    const contentType = response.headers.get('content-type') || 'video/mp4';
 
-    res.setHeader('Content-Type', contentType);
+    console.log(`[proxy] size: ${contentLength} type: ${contentType}`);
+
+    res.setHeader('Content-Type', 'video/mp4');
     res.setHeader('Content-Disposition', `attachment; filename="${filename || 'video.mp4'}"`);
     if (contentLength) res.setHeader('Content-Length', contentLength);
     res.setHeader('Accept-Ranges', 'bytes');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Access-Control-Allow-Origin', '*');
 
-    const { Readable } = await import('stream');
+    // Fixed: response.body is a Web ReadableStream (Node 18+ fetch API)
+    // Must use Readable.fromWeb() to convert to Node.js stream before piping
     const nodeStream = Readable.fromWeb(response.body);
     nodeStream.pipe(res);
     nodeStream.on('error', (e) => {
@@ -205,6 +194,7 @@ router.get('/proxy', async (req, res) => {
     if (!res.headersSent) res.status(500).json({ error: e.message });
   }
 });
+
 // On-demand render for a specific video quality
 router.post('/render', async (req, res) => {
   const { hashId, quality } = req.body;
@@ -296,106 +286,6 @@ router.get('/render-status', async (req, res) => {
   }
 });
 
-// Extract MP3 audio from any video URL via ffmpeg
-router.get('/audio', async (req, res) => {
-  const { videoUrl, title } = req.query;
-  if (!videoUrl) return res.status(400).json({ error: 'videoUrl required' });
-
-  const filename = safeFilename(title || 'audio');
-  const decodedUrl = decodeURIComponent(videoUrl);
-
-  // For direct audio URLs (YouTube) — just proxy directly, no ffmpeg needed
-  // Only use ffmpeg if it's a video URL that needs audio extraction
-  if (!existsSync(ffmpegPath)) {
-    // Fallback: direct proxy
-    return proxyAudio(decodedUrl, filename, res);
-  }
-
-  console.log(`[audio] extracting: "${filename}"`);
-
-  res.setHeader('Content-Disposition',
-    `attachment; filename="${filename}.mp3"; filename*=UTF-8''${encodeURIComponent(filename + '.mp3')}`);
-res.setHeader('Content-Type', 'audio/aac');
-  res.setHeader('Transfer-Encoding', 'chunked');
-  res.setHeader('X-Accel-Buffering', 'no');
-
-  const reconnect = ['-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '10'];
-
-  // Try libmp3lame first, fallback to aac if not available
-  const ffmpegArgs = [
-    ...reconnect,
-    '-i', decodedUrl,
-    '-vn',
-    '-acodec', 'aac',   // ← Use AAC (always available, no libmp3lame needed)
-    '-b:a', '192k',
-    '-f', 'adts',       // AAC audio format
-    'pipe:1',
-  ];
-
-  const ffmpeg = spawn(ffmpegPath, ffmpegArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
-  let headersSent = false;
-
-  ffmpeg.stdout.on('data', (chunk) => {
-    if (!headersSent) headersSent = true;
-    res.write(chunk);
-  });
-
-  ffmpeg.stderr.on('data', d => {
-    const line = d.toString().trim();
-    if (line.includes('time=') || line.includes('Error') || line.includes('Unknown encoder')) {
-      console.log('[audio ffmpeg]', line.slice(0, 100));
-    }
-  });
-
-  ffmpeg.on('error', err => {
-    console.error('[audio] ffmpeg error:', err.message);
-    if (!res.headersSent) res.status(500).json({ error: 'ffmpeg failed' });
-    else res.end();
-  });
-
-  ffmpeg.on('close', async (code) => {
-    console.log(`[audio] ffmpeg done code=${code}`);
-    if (code !== 0 && !headersSent) {
-      // libmp3lame failed — fallback to direct proxy
-      console.log('[audio] libmp3lame failed, falling back to proxy...');
-      if (!res.writableEnded) {
-        await proxyAudio(decodedUrl, filename, res);
-      }
-    } else {
-      if (!res.writableEnded) res.end();
-    }
-  });
-
-  req.on('close', () => ffmpeg.kill('SIGKILL'));
-});
-
-async function proxyAudio(url, filename, res) {
-  try {
-    const response = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': '*/*' },
-      signal: AbortSignal.timeout(60000),
-    });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-    const contentLength = response.headers.get('content-length');
-    if (!res.headersSent) {
-      res.setHeader('Content-Disposition', `attachment; filename="${filename}.mp3"`);
-      res.setHeader('Content-Type', 'audio/mpeg');
-      if (contentLength) res.setHeader('Content-Length', contentLength);
-    }
-
-    const { Readable } = await import('stream');
-    const nodeStream = Readable.fromWeb(response.body);
-    nodeStream.pipe(res);
-    nodeStream.on('error', () => res.end());
-  } catch (e) {
-    console.error('[audio proxy] error:', e.message);
-    if (!res.headersSent) res.status(500).json({ error: e.message });
-    else res.end();
-  }
-}
-
-
 // Stream video via ffmpeg
 router.get('/stream', (req, res) => {
   const { title, videoUrl, audioUrl } = req.query;
@@ -430,10 +320,8 @@ function streamViaFfmpeg(req, res, urls, filename) {
       '-f', 'mp4', 'pipe:1',
     ];
   }
-res.setHeader('Content-Disposition',
-  `attachment; filename="${filename}.aac"; filename*=UTF-8''${encodeURIComponent(filename + '.aac')}`
-);
-//  res.setHeader('Content-Disposition', `attachment; filename="${filename}.mp4"; filename*=UTF-8''${encodeURIComponent(filename + '.mp4')}`);
+
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}.mp4"; filename*=UTF-8''${encodeURIComponent(filename + '.mp4')}`);
   res.setHeader('Content-Type', 'video/mp4');
   res.setHeader('Transfer-Encoding', 'chunked');
   res.setHeader('X-Accel-Buffering', 'no');
