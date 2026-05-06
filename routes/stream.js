@@ -286,6 +286,93 @@ router.get('/render-status', async (req, res) => {
   }
 });
 
+router.get('/audio', (req, res) => {
+  const { videoUrl, title } = req.query;
+
+  if (!videoUrl) return res.status(400).json({ error: 'videoUrl required' });
+  if (!existsSync(ffmpegPath)) return res.status(500).json({ error: 'ffmpeg not found' });
+
+  const filename = safeFilename(title || 'audio');
+  console.log(`[audio] extracting from: ${decodeURIComponent(videoUrl).slice(0, 80)}`);
+
+  res.setHeader('Content-Disposition',
+    `attachment; filename="${filename}.mp3"; filename*=UTF-8''${encodeURIComponent(filename + '.mp3')}`);
+  res.setHeader('Content-Type', 'audio/mpeg');
+  res.setHeader('Transfer-Encoding', 'chunked');
+  res.setHeader('X-Accel-Buffering', 'no');
+
+  const reconnect = ['-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '10'];
+
+  const ffmpegArgs = [
+    ...reconnect,
+    '-i', decodeURIComponent(videoUrl),
+    '-vn',                    // Remove video track
+    '-acodec', 'libmp3lame',  // MP3 encoding
+    '-b:a', '192k',
+    '-ar', '44100',
+    '-f', 'mp3',
+    'pipe:1',
+  ];
+
+  const ffmpeg = spawn(ffmpegPath, ffmpegArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+  let hasOutput = false;
+
+  ffmpeg.stdout.on('data', (chunk) => {
+    hasOutput = true;
+    res.write(chunk);
+  });
+
+  ffmpeg.stderr.on('data', d => {
+    const line = d.toString().trim();
+    if (line.includes('time=') || line.includes('Error') || line.includes('error')) {
+      console.log('[audio]', line.slice(0, 100));
+    }
+  });
+
+  ffmpeg.on('error', err => {
+    console.error('[audio] spawn error:', err.message);
+    if (!res.headersSent) res.status(500).json({ error: 'ffmpeg spawn failed' });
+    else res.end();
+  });
+
+  ffmpeg.on('close', async (code) => {
+    console.log(`[audio] done code=${code} hasOutput=${hasOutput}`);
+    if (code !== 0 && !hasOutput) {
+      // libmp3lame not available — fallback to AAC
+      console.log('[audio] trying AAC fallback...');
+      extractAAC(decodeURIComponent(videoUrl), filename, res);
+    } else {
+      if (!res.writableEnded) res.end();
+    }
+  });
+
+  req.on('close', () => ffmpeg.kill('SIGKILL'));
+});
+
+function extractAAC(videoUrl, filename, res) {
+  const reconnect = ['-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '10'];
+
+  // Change headers for AAC
+  if (!res.headersSent) {
+    res.setHeader('Content-Type', 'audio/aac');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}.aac"`);
+  }
+
+  const ffmpegArgs = [
+    ...reconnect,
+    '-i', videoUrl,
+    '-vn',
+    '-acodec', 'copy',  // Copy audio stream as-is
+    '-f', 'adts',       // AAC container
+    'pipe:1',
+  ];
+
+  const ffmpeg = spawn(ffmpegPath, ffmpegArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+  ffmpeg.stdout.pipe(res);
+  ffmpeg.on('error', () => res.end());
+  ffmpeg.on('close', () => { if (!res.writableEnded) res.end(); });
+}
+
 // Stream video via ffmpeg
 router.get('/stream', (req, res) => {
   const { title, videoUrl, audioUrl } = req.query;

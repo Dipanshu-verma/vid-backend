@@ -578,6 +578,20 @@ async function tryRapidAPI(url, platform) {
     });
   }
 
+  const renderableForAudio = renderableVideos.find(v => v.renderConfig?.executionUrl);
+
+  if (renderableForAudio && qualities.length > 0) {
+    qualities.push({
+      label: 'MP3 Audio',
+      url: renderableForAudio.renderConfig.executionUrl, // Same render URL
+      ext: 'mp3',
+      resolution: 'Audio Only',
+      size: undefined,
+      isAudio: true,
+    });
+  }
+
+
   if (qualities.length === 0) throw new Error('No qualities in RapidAPI response');
 
   return { platform, title, thumbnail, author, qualities, _source: 'rapidapi' };
