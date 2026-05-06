@@ -654,40 +654,60 @@ async function tryRapidAPI(url, platform) {
   // ── MP3 Audio ────────────────────────────────────────────────────────
 
   // YouTube — use direct audio stream from audios array
-  if (platform === 'youtube' && audios.length > 0) {
-    const bestAudio = audios
-      .filter(a => a.url)
-      .sort((a, b) => {
-        const order = { AUDIO_QUALITY_HIGH: 3, AUDIO_QUALITY_MEDIUM: 2, AUDIO_QUALITY_LOW: 1 };
-        return (order[b.metadata?.audio_quality] || 0) - (order[a.metadata?.audio_quality] || 0);
-      })[0];
+// YouTube MP3 — only add if video qualities exist
+if (platform === 'youtube' && audios.length > 0 && qualities.length > 0) {
+  const bestAudio = audios
+    .filter(a => a.url)
+    .sort((a, b) => {
+      const order = { AUDIO_QUALITY_HIGH: 3, AUDIO_QUALITY_MEDIUM: 2, AUDIO_QUALITY_LOW: 1 };
+      return (order[b.metadata?.audio_quality] || 0) - (order[a.metadata?.audio_quality] || 0);
+    })[0];
 
-    if (bestAudio) {
-      qualities.push({
-        label: 'MP3 Audio',
-        url: `${API}/api/audio?videoUrl=${encodeURIComponent(bestAudio.url)}&title=${encodeURIComponent(title)}`,
-        ext: 'mp3',
-        resolution: 'Audio Only · 192kbps',
-        size: bestAudio.metadata?.content_length_text || undefined,
-        isAudio: true,
-      });
-    }
+  if (bestAudio) {
+    qualities.push({
+      label: 'MP3 Audio',
+      url: `${API}/api/audio?videoUrl=${encodeURIComponent(bestAudio.url)}&title=${encodeURIComponent(title)}`,
+      ext: 'mp3',
+      resolution: 'Audio Only',
+      size: undefined, // Remove size — causes confusion
+      isAudio: true,
+    });
   }
+}
 
-  // Instagram & Facebook — extract audio from rendered video
-  if ((platform === 'instagram' || platform === 'facebook') && renderableVideos.length > 0) {
-    const bestVideo = renderableVideos[0];
-    if (bestVideo.renderConfig?.executionUrl) {
-      qualities.push({
-        label: 'MP3 Audio',
-        url: bestVideo.renderConfig.executionUrl,
-        ext: 'mp3',
-        resolution: 'Audio Only · 192kbps',
-        size: undefined,
-        isAudio: true,
-      });
-    }
+// Instagram & Facebook MP3 — only add if video qualities exist
+if ((platform === 'instagram' || platform === 'facebook')
+    && renderableVideos.length > 0
+    && qualities.length > 0) {
+  const bestVideo = renderableVideos[0];
+  if (bestVideo.renderConfig?.executionUrl) {
+    qualities.push({
+      label: 'MP3 Audio',
+      url: bestVideo.renderConfig.executionUrl,
+      ext: 'mp3',
+      resolution: 'Audio Only',
+      size: undefined,
+      isAudio: true,
+    });
   }
+}
+
+// Instagram & Facebook MP3 — only add if video qualities exist
+if ((platform === 'instagram' || platform === 'facebook')
+    && renderableVideos.length > 0
+    && qualities.length > 0) {
+  const bestVideo = renderableVideos[0];
+  if (bestVideo.renderConfig?.executionUrl) {
+    qualities.push({
+      label: 'MP3 Audio',
+      url: bestVideo.renderConfig.executionUrl,
+      ext: 'mp3',
+      resolution: 'Audio Only',
+      size: undefined,
+      isAudio: true,
+    });
+  }
+}
 
   if (qualities.length === 0) throw new Error('No qualities in RapidAPI response');
 
