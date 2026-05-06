@@ -576,6 +576,7 @@ async function tryRapidAPI(url, platform) {
   const thumbnail = data.metadata?.thumbnailUrl || data.metadata?.thumbnail || '';
   const author = data.metadata?.author?.name;
   const renderableVideos = data.contents?.[0]?.renderableVideos || [];
+const duration = data.metadata?.additionalData?.duration || undefined; // ← add this
 
   const qualities = [];
   const seen = new Set();
