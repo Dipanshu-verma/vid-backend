@@ -515,6 +515,74 @@ export async function getVideoInfo(url) {
 /* ═════════════════════════════════════════════════════════════════
    METHOD 1 — RapidAPI (your existing working flow)
    ═══════════════════════════════════════════════════════════════ */
+//async function tryRapidAPI(url, platform) {
+//  if (!RAPIDAPI_KEY) throw new Error('RAPIDAPI_KEY not set');
+//
+//  const headers = {
+//    'x-rapidapi-key': RAPIDAPI_KEY,
+//    'x-rapidapi-host': RAPIDAPI_HOST,
+//  };
+//
+//  let endpoint = '';
+//  let params = '';
+//
+//  if (platform === 'instagram') {
+//    const match = url.match(/\/(p|reel|tv)\/([A-Za-z0-9_-]+)/);
+//    if (!match) throw new Error('Could not extract Instagram shortcode');
+//    endpoint = '/instagram/v3/media/post/details';
+//    params = `?shortcode=${match[2]}&renderableFormats=720p,1080p&fields=contents,metadata`;
+//  } else if (platform === 'facebook') {
+//    endpoint = '/facebook/v3/post/details';
+//    params = `?url=${encodeURIComponent(url)}&renderableFormats=720p,1080p&fields=contents,metadata`;
+//  } else if (platform === 'tiktok') {
+//    endpoint = '/tiktok/v3/post/details';
+//    params = `?url=${encodeURIComponent(url)}&fields=contents,metadata`;
+//  } else if (platform === 'youtube') {
+//    const match = url.match(/(?:v=|youtu\.be\/|shorts\/)([A-Za-z0-9_-]{11})/);
+//    if (!match) throw new Error('Could not extract YouTube video ID');
+//    endpoint = '/youtube/v3/video/details';
+//    params = `?videoId=${match[1]}&renderableFormats=720p,1080p,1440p,2160p&urlAccess=normal&fields=contents,metadata`;
+//  } else if (platform === 'twitter') {
+//    endpoint = '/twitter/v3/post/details';
+//    params = `?url=${encodeURIComponent(url)}&fields=contents,metadata`;
+//  } else {
+//    throw new Error('Unsupported platform for RapidAPI');
+//  }
+//
+//  const res = await fetch(`https://${RAPIDAPI_HOST}${endpoint}${params}`, {
+//    headers,
+//    signal: AbortSignal.timeout(45000),
+//  });
+//
+//  const data = await res.json();
+//  if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+//
+//  const title = data.metadata?.title || data.metadata?.author?.name || 'Video';
+//  const thumbnail = data.metadata?.thumbnailUrl || data.metadata?.thumbnail || '';
+//  const author = data.metadata?.author?.name;
+//  const renderableVideos = data.contents?.[0]?.renderableVideos || [];
+//
+//  const qualities = [];
+//  const seen = new Set();
+//  for (const v of renderableVideos) {
+//    if (!v.renderConfig?.executionUrl) continue;
+//    const label = v.label || v.metadata?.quality_label || 'Best Quality';
+//    if (seen.has(label)) continue;
+//    seen.add(label);
+//    qualities.push({
+//      label,
+//      url: v.renderConfig.executionUrl,
+//      ext: 'mp4',
+//      resolution: v.metadata?.quality_label || label,
+//      size: v.metadata?.content_length_text || undefined,
+//    });
+//  }
+//
+//  if (qualities.length === 0) throw new Error('No qualities in RapidAPI response');
+//
+//  return { platform, title, thumbnail, author, qualities, _source: 'rapidapi' };
+//}
+
 async function tryRapidAPI(url, platform) {
   if (!RAPIDAPI_KEY) throw new Error('RAPIDAPI_KEY not set');
 
@@ -561,9 +629,13 @@ async function tryRapidAPI(url, platform) {
   const thumbnail = data.metadata?.thumbnailUrl || data.metadata?.thumbnail || '';
   const author = data.metadata?.author?.name;
   const renderableVideos = data.contents?.[0]?.renderableVideos || [];
+  const audios = data.contents?.[0]?.audios || [];
 
+  const API = process.env.API_BASE_URL || 'http://localhost:3001';
   const qualities = [];
   const seen = new Set();
+
+  // ── Video qualities ──────────────────────────────────────────────────
   for (const v of renderableVideos) {
     if (!v.renderConfig?.executionUrl) continue;
     const label = v.label || v.metadata?.quality_label || 'Best Quality';
@@ -575,7 +647,46 @@ async function tryRapidAPI(url, platform) {
       ext: 'mp4',
       resolution: v.metadata?.quality_label || label,
       size: v.metadata?.content_length_text || undefined,
+      isAudio: false,
     });
+  }
+
+  // ── MP3 Audio ────────────────────────────────────────────────────────
+
+  // YouTube — use direct audio stream from audios array
+  if (platform === 'youtube' && audios.length > 0) {
+    const bestAudio = audios
+      .filter(a => a.url)
+      .sort((a, b) => {
+        const order = { AUDIO_QUALITY_HIGH: 3, AUDIO_QUALITY_MEDIUM: 2, AUDIO_QUALITY_LOW: 1 };
+        return (order[b.metadata?.audio_quality] || 0) - (order[a.metadata?.audio_quality] || 0);
+      })[0];
+
+    if (bestAudio) {
+      qualities.push({
+        label: 'MP3 Audio',
+        url: `${API}/api/audio?videoUrl=${encodeURIComponent(bestAudio.url)}&title=${encodeURIComponent(title)}`,
+        ext: 'mp3',
+        resolution: 'Audio Only · 192kbps',
+        size: bestAudio.metadata?.content_length_text || undefined,
+        isAudio: true,
+      });
+    }
+  }
+
+  // Instagram & Facebook — extract audio from rendered video
+  if ((platform === 'instagram' || platform === 'facebook') && renderableVideos.length > 0) {
+    const bestVideo = renderableVideos[0];
+    if (bestVideo.renderConfig?.executionUrl) {
+      qualities.push({
+        label: 'MP3 Audio',
+        url: bestVideo.renderConfig.executionUrl,
+        ext: 'mp3',
+        resolution: 'Audio Only · 192kbps',
+        size: undefined,
+        isAudio: true,
+      });
+    }
   }
 
   if (qualities.length === 0) throw new Error('No qualities in RapidAPI response');
@@ -670,6 +781,25 @@ async function tryYtDlp(url, platform) {
       resolution: info.height ? `${info.height}p` : 'Best',
     });
   }
+   if (info.formats) {
+      const bestAudioFmt = (info.formats || [])
+        .filter(f => f.url && f.acodec && f.acodec !== 'none' && (!f.vcodec || f.vcodec === 'none'))
+        .sort((a, b) => (b.abr || b.tbr || 0) - (a.abr || a.tbr || 0))[0];
+
+      if (bestAudioFmt) {
+        const API = process.env.API_BASE_URL || 'http://localhost:3001';
+        qualities.push({
+          label: 'MP3 Audio',
+          url: `${API}/api/audio?videoUrl=${encodeURIComponent(bestAudioFmt.url)}&title=${encodeURIComponent(title)}`,
+          ext: 'mp3',
+          resolution: 'Audio Only · 192kbps',
+          size: bestAudioFmt.filesize
+            ? `${(bestAudioFmt.filesize / 1024 / 1024).toFixed(1)} MB`
+            : undefined,
+          isAudio: true,
+        });
+      }
+    }
 
   if (qualities.length === 0) throw new Error('No usable formats from yt-dlp');
 

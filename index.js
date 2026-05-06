@@ -58,10 +58,6 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: Date.now() });
 });
 
-//const PORT = process.env.PORT || 3001;
-//app.listen(PORT, () => {
-//  console.log(`✅ VidSave server running on http://localhost:${PORT}`);
-//});
 const SELF_URL = process.env.API_BASE_URL || 'https://vid-backend-pr0o.onrender.com';
 
 const PORT = process.env.PORT || 3001;
