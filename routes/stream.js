@@ -156,13 +156,27 @@ router.get('/proxy', async (req, res) => {
   try {
     const decodedUrl = decodeURIComponent(url);
     const isAudio = filename?.endsWith('.mp3') || filename?.endsWith('.m4a');
+    const isRapidApiUrl = decodedUrl.includes('smvd.xyz') ||
+                          decodedUrl.includes('rapidapi') ||
+                          decodedUrl.includes('redirector');
+
+    console.log('[proxy] fetching:', decodedUrl.slice(0, 80));
+
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      'Accept': isAudio ? 'audio/*,*/*' : 'video/mp4,video/*,*/*',
+      'Accept-Encoding': 'identity',
+    };
+
+    // Add RapidAPI headers for their CDN/redirector URLs
+    if (isRapidApiUrl && process.env.RAPIDAPI_KEY) {
+      headers['x-rapidapi-key'] = process.env.RAPIDAPI_KEY;
+      headers['x-rapidapi-host'] = process.env.RAPIDAPI_HOST ||
+        'social-media-video-downloader.p.rapidapi.com';
+    }
 
     const response = await fetch(decodedUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': isAudio ? 'audio/*,*/*' : 'video/mp4,video/*,*/*',
-        'Accept-Encoding': 'identity',
-      },
+      headers,
       signal: AbortSignal.timeout(120000),
     });
 
