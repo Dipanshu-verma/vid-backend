@@ -759,26 +759,26 @@ async function tryRapidAPI(url, platform) {
   // ── MP3 Audio ────────────────────────────────────────────────────────
 
   // YouTube — use direct audio URL (no ffmpeg needed!)
-  if (platform === 'youtube' && audios.length > 0 && qualities.length > 0) {
-    const bestAudio = audios
-      .filter(a => a.url)
-      .sort((a, b) => {
-        const order = { AUDIO_QUALITY_HIGH: 3, AUDIO_QUALITY_MEDIUM: 2, AUDIO_QUALITY_LOW: 1 };
-        return (order[b.metadata?.audio_quality] || 0) - (order[a.metadata?.audio_quality] || 0);
-      })[0];
+// YouTube — use direct audio URL (no proxy needed, tokens act as auth)
+if (platform === 'youtube' && audios.length > 0 && qualities.length > 0) {
+  const bestAudio = audios
+    .filter(a => a.url)
+    .sort((a, b) => {
+      const order = { AUDIO_QUALITY_HIGH: 3, AUDIO_QUALITY_MEDIUM: 2, AUDIO_QUALITY_LOW: 1 };
+      return (order[b.metadata?.audio_quality] || 0) - (order[a.metadata?.audio_quality] || 0);
+    })[0];
 
-    if (bestAudio) {
-      qualities.push({
-        label: 'MP3 Audio',
-        // ← Direct proxy — no ffmpeg, audio URL already has audio only
-        url: `${API}/api/proxy?url=${encodeURIComponent(bestAudio.url)}&filename=audio.mp3`,
-        ext: 'mp3',
-        resolution: 'Audio Only',
-        size: bestAudio.metadata?.content_length_text || undefined,
-        isAudio: true,
-      });
-    }
+  if (bestAudio) {
+    qualities.push({
+      label: 'MP3 Audio',
+      url: bestAudio.url, // ← Direct URL, no proxy wrapper
+      ext: 'mp3',
+      resolution: 'Audio Only',
+      size: bestAudio.metadata?.content_length_text || undefined,
+      isAudio: true,
+    });
   }
+}
 
   // Instagram & Facebook — extract audio from rendered video via ffmpeg
   if ((platform === 'instagram' || platform === 'facebook')
