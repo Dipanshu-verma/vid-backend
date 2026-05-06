@@ -512,6 +512,21 @@ export async function getVideoInfo(url) {
   throw new Error(`All methods failed.\n${errors.join('\n')}`);
 }
 
+// Helper function — estimate MP3 size from duration
+function estimateAudioSize(duration) {
+  if (!duration) return undefined;
+  try {
+    // duration format: "00:03:33" or "3:33"
+    const parts = duration.split(':').map(Number);
+    let seconds = 0;
+    if (parts.length === 3) seconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
+    if (parts.length === 2) seconds = parts[0] * 60 + parts[1];
+    // 192kbps MP3 = 192000 bits/sec = 24000 bytes/sec
+    const bytes = seconds * 24000;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  } catch { return undefined; }
+}
 /* ═════════════════════════════════════════════════════════════════
    METHOD 1 — RapidAPI (your existing working flow)
    ═══════════════════════════════════════════════════════════════ */
@@ -586,7 +601,7 @@ async function tryRapidAPI(url, platform) {
       url: renderableForAudio.renderConfig.executionUrl, // Same render URL
       ext: 'mp3',
       resolution: 'Audio Only',
-      size: undefined,
+    size: estimateAudioSize(duration), // ← estimated size
       isAudio: true,
     });
   }
