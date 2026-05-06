@@ -315,7 +315,7 @@ router.get('/audio', async (req, res) => {
 
   res.setHeader('Content-Disposition',
     `attachment; filename="${filename}.mp3"; filename*=UTF-8''${encodeURIComponent(filename + '.mp3')}`);
-  res.setHeader('Content-Type', 'audio/mpeg');
+res.setHeader('Content-Type', 'audio/aac');
   res.setHeader('Transfer-Encoding', 'chunked');
   res.setHeader('X-Accel-Buffering', 'no');
 
@@ -326,10 +326,9 @@ router.get('/audio', async (req, res) => {
     ...reconnect,
     '-i', decodedUrl,
     '-vn',
-    '-acodec', 'libmp3lame',
+    '-acodec', 'aac',   // ← Use AAC (always available, no libmp3lame needed)
     '-b:a', '192k',
-    '-ar', '44100',
-    '-f', 'mp3',
+    '-f', 'adts',       // AAC audio format
     'pipe:1',
   ];
 
@@ -431,8 +430,10 @@ function streamViaFfmpeg(req, res, urls, filename) {
       '-f', 'mp4', 'pipe:1',
     ];
   }
-
-  res.setHeader('Content-Disposition', `attachment; filename="${filename}.mp4"; filename*=UTF-8''${encodeURIComponent(filename + '.mp4')}`);
+res.setHeader('Content-Disposition',
+  `attachment; filename="${filename}.aac"; filename*=UTF-8''${encodeURIComponent(filename + '.aac')}`
+);
+//  res.setHeader('Content-Disposition', `attachment; filename="${filename}.mp4"; filename*=UTF-8''${encodeURIComponent(filename + '.mp4')}`);
   res.setHeader('Content-Type', 'video/mp4');
   res.setHeader('Transfer-Encoding', 'chunked');
   res.setHeader('X-Accel-Buffering', 'no');

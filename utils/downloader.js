@@ -760,43 +760,56 @@ async function tryRapidAPI(url, platform) {
 
   // YouTube — use direct audio URL (no ffmpeg needed!)
 // YouTube — use direct audio URL (no proxy needed, tokens act as auth)
-if (platform === 'youtube' && audios.length > 0 && qualities.length > 0) {
-  const bestAudio = audios
-    .filter(a => a.url)
-    .sort((a, b) => {
-      const order = { AUDIO_QUALITY_HIGH: 3, AUDIO_QUALITY_MEDIUM: 2, AUDIO_QUALITY_LOW: 1 };
-      return (order[b.metadata?.audio_quality] || 0) - (order[a.metadata?.audio_quality] || 0);
-    })[0];
+//if (platform === 'youtube' && audios.length > 0 && qualities.length > 0) {
+//  const bestAudio = audios
+//    .filter(a => a.url)
+//    .sort((a, b) => {
+//      const order = { AUDIO_QUALITY_HIGH: 3, AUDIO_QUALITY_MEDIUM: 2, AUDIO_QUALITY_LOW: 1 };
+//      return (order[b.metadata?.audio_quality] || 0) - (order[a.metadata?.audio_quality] || 0);
+//    })[0];
+//
+//  if (bestAudio) {
+//    qualities.push({
+//      label: 'MP3 Audio',
+//      url: bestAudio.url, // ← Direct URL, no proxy wrapper
+//      ext: 'mp3',
+//      resolution: 'Audio Only',
+//      size: bestAudio.metadata?.content_length_text || undefined,
+//      isAudio: true,
+//    });
+//  }
+//}
 
-  if (bestAudio) {
-    qualities.push({
-      label: 'MP3 Audio',
-      url: bestAudio.url, // ← Direct URL, no proxy wrapper
-      ext: 'mp3',
-      resolution: 'Audio Only',
-      size: bestAudio.metadata?.content_length_text || undefined,
-      isAudio: true,
-    });
-  }
+if (renderableVideos.length > 0 && qualities.length > 0 &&
+    ['youtube', 'instagram', 'facebook'].includes(platform)) {
+  qualities.push({
+    label: 'MP3 Audio',
+    url: renderableVideos[0].renderConfig.executionUrl, // Same render job as video
+    ext: 'aac',
+    resolution: 'Audio Only',
+    size: undefined,
+    isAudio: true,
+  });
 }
 
   // Instagram & Facebook — extract audio from rendered video via ffmpeg
-  if ((platform === 'instagram' || platform === 'facebook')
-      && renderableVideos.length > 0
-      && qualities.length > 0) {
-    qualities.push({
-      label: 'MP3 Audio',
-      url: renderableVideos[0].renderConfig.executionUrl,
-      ext: 'mp3',
-      resolution: 'Audio Only',
-      size: undefined,
-      isAudio: true,
-    });
-  }
+//  if ((platform === 'instagram' || platform === 'facebook')
+//      && renderableVideos.length > 0
+//      && qualities.length > 0) {
+//    qualities.push({
+//      label: 'MP3 Audio',
+//      url: renderableVideos[0].renderConfig.executionUrl,
+//      ext: 'mp3',
+//      resolution: 'Audio Only',
+//      size: undefined,
+//      isAudio: true,
+//    });
+//  }
 
   if (qualities.length === 0) throw new Error('No qualities in RapidAPI response');
   return { platform, title, thumbnail, author, qualities, _source: 'rapidapi' };
 }
+
 
 /* ═════════════════════════════════════════════════════════════════
    METHOD 2 — yt-dlp (self-hosted, always works for YT)
