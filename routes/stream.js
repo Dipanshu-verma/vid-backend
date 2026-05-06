@@ -286,6 +286,64 @@ router.get('/render-status', async (req, res) => {
   }
 });
 
+// Extract MP3 audio from any video URL via ffmpeg
+router.get('/audio', (req, res) => {
+  const { videoUrl, title } = req.query;
+
+  if (!videoUrl) return res.status(400).json({ error: 'videoUrl required' });
+  if (!existsSync(ffmpegPath)) return res.status(500).json({ error: 'ffmpeg not found' });
+
+  const filename = safeFilename(title || 'audio');
+
+  res.setHeader('Content-Disposition',
+    `attachment; filename="${filename}.mp3"; filename*=UTF-8''${encodeURIComponent(filename + '.mp3')}`
+  );
+  res.setHeader('Content-Type', 'audio/mpeg');
+  res.setHeader('Transfer-Encoding', 'chunked');
+  res.setHeader('X-Accel-Buffering', 'no');
+
+  const reconnect = ['-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '10'];
+
+  const ffmpegArgs = [
+    ...reconnect,
+    '-i', decodeURIComponent(videoUrl),
+    '-vn',              // No video
+    '-acodec', 'libmp3lame',
+    '-ab', '192k',      // 192kbps MP3
+    '-ar', '44100',
+    '-f', 'mp3',
+    'pipe:1',
+  ];
+
+  console.log(`[audio] extracting MP3 from: ${decodeURIComponent(videoUrl).slice(0, 60)}`);
+
+  const ffmpeg = spawn(ffmpegPath, ffmpegArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+  ffmpeg.stdout.pipe(res);
+
+  ffmpeg.stderr.on('data', d => {
+    const line = d.toString().trim();
+    if (line.includes('time=') || line.includes('Error')) {
+      console.log('[audio ffmpeg]', line);
+    }
+  });
+
+  ffmpeg.on('error', err => {
+    console.error('[audio] ffmpeg error:', err.message);
+    if (!res.headersSent) res.status(500).json({ error: 'ffmpeg failed' });
+    else res.end();
+  });
+
+  ffmpeg.on('close', code => {
+    console.log(`[audio] ffmpeg done code=${code}`);
+    if (!res.writableEnded) res.end();
+  });
+
+  req.on('close', () => {
+    ffmpeg.kill('SIGKILL');
+  });
+});
+
+
 // Stream video via ffmpeg
 router.get('/stream', (req, res) => {
   const { title, videoUrl, audioUrl } = req.query;
