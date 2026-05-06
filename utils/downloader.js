@@ -629,13 +629,10 @@ async function tryRapidAPI(url, platform) {
   const thumbnail = data.metadata?.thumbnailUrl || data.metadata?.thumbnail || '';
   const author = data.metadata?.author?.name;
   const renderableVideos = data.contents?.[0]?.renderableVideos || [];
-  const audios = data.contents?.[0]?.audios || [];
 
-  const API = process.env.API_BASE_URL || 'http://localhost:3001';
   const qualities = [];
   const seen = new Set();
 
-  // ── Video qualities ──────────────────────────────────────────────────
   for (const v of renderableVideos) {
     if (!v.renderConfig?.executionUrl) continue;
     const label = v.label || v.metadata?.quality_label || 'Best Quality';
@@ -647,53 +644,12 @@ async function tryRapidAPI(url, platform) {
       ext: 'mp4',
       resolution: v.metadata?.quality_label || label,
       size: v.metadata?.content_length_text || undefined,
-      isAudio: false,
     });
   }
 
-  // ── MP3 Audio ────────────────────────────────────────────────────────
-
-  // YouTube — use direct audio stream from audios array
-  if (platform === 'youtube' && audios.length > 0) {
-    const bestAudio = audios
-      .filter(a => a.url)
-      .sort((a, b) => {
-        const order = { AUDIO_QUALITY_HIGH: 3, AUDIO_QUALITY_MEDIUM: 2, AUDIO_QUALITY_LOW: 1 };
-        return (order[b.metadata?.audio_quality] || 0) - (order[a.metadata?.audio_quality] || 0);
-      })[0];
-
-    if (bestAudio) {
-      qualities.push({
-        label: 'MP3 Audio',
-        url: `${API}/api/audio?videoUrl=${encodeURIComponent(bestAudio.url)}&title=${encodeURIComponent(title)}`,
-        ext: 'mp3',
-        resolution: 'Audio Only · 192kbps',
-        size: bestAudio.metadata?.content_length_text || undefined,
-        isAudio: true,
-      });
-    }
-  }
-
-  // Instagram & Facebook — extract audio from rendered video
-  if ((platform === 'instagram' || platform === 'facebook') && renderableVideos.length > 0) {
-    const bestVideo = renderableVideos[0];
-    if (bestVideo.renderConfig?.executionUrl) {
-      qualities.push({
-        label: 'MP3 Audio',
-        url: bestVideo.renderConfig.executionUrl,
-        ext: 'mp3',
-        resolution: 'Audio Only · 192kbps',
-        size: undefined,
-        isAudio: true,
-      });
-    }
-  }
-
   if (qualities.length === 0) throw new Error('No qualities in RapidAPI response');
-
   return { platform, title, thumbnail, author, qualities, _source: 'rapidapi' };
 }
-
 /* ═════════════════════════════════════════════════════════════════
    METHOD 2 — yt-dlp (self-hosted, always works for YT)
    ═══════════════════════════════════════════════════════════════ */
