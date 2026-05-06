@@ -714,7 +714,7 @@ async function tryRapidAPI(url, platform) {
 //  return { platform, title, thumbnail, author, qualities, _source: 'rapidapi' };
 //}
 
- const renderableVideos = data.contents?.[0]?.renderableVideos || [];
+const renderableVideos = data.contents?.[0]?.renderableVideos || [];
   const audios = data.contents?.[0]?.audios || [];
   const videos = data.contents?.[0]?.videos || [];
 
@@ -738,8 +738,8 @@ async function tryRapidAPI(url, platform) {
     });
   }
 
-  // ── Direct videos fallback (720p combined, if no renderableVideos) ───
-  if (qualities.length === 0) {
+  // ── Direct videos (proxied URLs — downloadable without auth) ─────────
+  if (qualities.length === 0 && videos.length > 0) {
     for (const v of videos) {
       if (!v.url) continue;
       const label = v.metadata?.quality_label || v.label || 'Best Quality';
@@ -747,7 +747,7 @@ async function tryRapidAPI(url, platform) {
       seen.add(label);
       qualities.push({
         label,
-        url: `${API}/api/proxy?url=${encodeURIComponent(v.url)}&filename=video.mp4`,
+        url: v.url, // urlAccess=proxied means direct download works
         ext: 'mp4',
         resolution: label,
         size: v.metadata?.content_length_text || undefined,
@@ -758,36 +758,10 @@ async function tryRapidAPI(url, platform) {
 
   // ── MP3 Audio ────────────────────────────────────────────────────────
 
-  // YouTube — use direct audio URL (no ffmpeg needed!)
-// YouTube — use direct audio URL (no proxy needed, tokens act as auth)
-//if (platform === 'youtube' && audios.length > 0 && qualities.length > 0) {
-//  const bestAudio = audios
-//    .filter(a => a.url)
-//    .sort((a, b) => {
-//      const order = { AUDIO_QUALITY_HIGH: 3, AUDIO_QUALITY_MEDIUM: 2, AUDIO_QUALITY_LOW: 1 };
-//      return (order[b.metadata?.audio_quality] || 0) - (order[a.metadata?.audio_quality] || 0);
-//    })[0];
-//
-//  if (bestAudio) {
-//    qualities.push({
-//      label: 'MP3 Audio',
-//      url: bestAudio.url, // ← Direct URL, no proxy wrapper
-//      ext: 'mp3',
-//      resolution: 'Audio Only',
-//      size: bestAudio.metadata?.content_length_text || undefined,
-//      isAudio: true,
-//    });
-//  }
-//}
+  // Try renderableVideos first
+  const renderableForAudio = renderableVideos.find(v => v.renderConfig?.executionUrl);
 
-// ── MP3 Audio ────────────────────────────────────────────────────────
-if (qualities.length > 0 && ['youtube', 'instagram', 'facebook'].includes(platform)) {
-  // Find first renderableVideo that has a valid executionUrl
-  const renderableForAudio = renderableVideos.find(
-    v => v.renderConfig?.executionUrl
-  );
-
-  if (renderableForAudio) {
+  if (renderableForAudio && qualities.length > 0) {
     qualities.push({
       label: 'MP3 Audio',
       url: renderableForAudio.renderConfig.executionUrl,
@@ -797,21 +771,26 @@ if (qualities.length > 0 && ['youtube', 'instagram', 'facebook'].includes(platfo
       isAudio: true,
     });
   }
-}
+  // Fallback — use direct audio URL from audios array (proxied, downloadable)
+  else if (audios.length > 0 && qualities.length > 0) {
+    const bestAudio = audios
+      .filter(a => a.url)
+      .sort((a, b) => {
+        const order = { AUDIO_QUALITY_HIGH: 3, AUDIO_QUALITY_MEDIUM: 2, AUDIO_QUALITY_LOW: 1 };
+        return (order[b.metadata?.audio_quality] || 0) - (order[a.metadata?.audio_quality] || 0);
+      })[0];
 
-  // Instagram & Facebook — extract audio from rendered video via ffmpeg
-//  if ((platform === 'instagram' || platform === 'facebook')
-//      && renderableVideos.length > 0
-//      && qualities.length > 0) {
-//    qualities.push({
-//      label: 'MP3 Audio',
-//      url: renderableVideos[0].renderConfig.executionUrl,
-//      ext: 'mp3',
-//      resolution: 'Audio Only',
-//      size: undefined,
-//      isAudio: true,
-//    });
-//  }
+    if (bestAudio) {
+      qualities.push({
+        label: 'MP3 Audio',
+        url: bestAudio.url, // proxied URL — no auth needed
+        ext: 'aac',
+        resolution: 'Audio Only',
+        size: bestAudio.metadata?.content_length_text || undefined,
+        isAudio: true,
+      });
+    }
+  }
 
   if (qualities.length === 0) throw new Error('No qualities in RapidAPI response');
   return { platform, title, thumbnail, author, qualities, _source: 'rapidapi' };
