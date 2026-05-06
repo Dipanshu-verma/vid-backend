@@ -515,74 +515,6 @@ export async function getVideoInfo(url) {
 /* ═════════════════════════════════════════════════════════════════
    METHOD 1 — RapidAPI (your existing working flow)
    ═══════════════════════════════════════════════════════════════ */
-//async function tryRapidAPI(url, platform) {
-//  if (!RAPIDAPI_KEY) throw new Error('RAPIDAPI_KEY not set');
-//
-//  const headers = {
-//    'x-rapidapi-key': RAPIDAPI_KEY,
-//    'x-rapidapi-host': RAPIDAPI_HOST,
-//  };
-//
-//  let endpoint = '';
-//  let params = '';
-//
-//  if (platform === 'instagram') {
-//    const match = url.match(/\/(p|reel|tv)\/([A-Za-z0-9_-]+)/);
-//    if (!match) throw new Error('Could not extract Instagram shortcode');
-//    endpoint = '/instagram/v3/media/post/details';
-//    params = `?shortcode=${match[2]}&renderableFormats=720p,1080p&fields=contents,metadata`;
-//  } else if (platform === 'facebook') {
-//    endpoint = '/facebook/v3/post/details';
-//    params = `?url=${encodeURIComponent(url)}&renderableFormats=720p,1080p&fields=contents,metadata`;
-//  } else if (platform === 'tiktok') {
-//    endpoint = '/tiktok/v3/post/details';
-//    params = `?url=${encodeURIComponent(url)}&fields=contents,metadata`;
-//  } else if (platform === 'youtube') {
-//    const match = url.match(/(?:v=|youtu\.be\/|shorts\/)([A-Za-z0-9_-]{11})/);
-//    if (!match) throw new Error('Could not extract YouTube video ID');
-//    endpoint = '/youtube/v3/video/details';
-//    params = `?videoId=${match[1]}&renderableFormats=720p,1080p,1440p,2160p&urlAccess=normal&fields=contents,metadata`;
-//  } else if (platform === 'twitter') {
-//    endpoint = '/twitter/v3/post/details';
-//    params = `?url=${encodeURIComponent(url)}&fields=contents,metadata`;
-//  } else {
-//    throw new Error('Unsupported platform for RapidAPI');
-//  }
-//
-//  const res = await fetch(`https://${RAPIDAPI_HOST}${endpoint}${params}`, {
-//    headers,
-//    signal: AbortSignal.timeout(45000),
-//  });
-//
-//  const data = await res.json();
-//  if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
-//
-//  const title = data.metadata?.title || data.metadata?.author?.name || 'Video';
-//  const thumbnail = data.metadata?.thumbnailUrl || data.metadata?.thumbnail || '';
-//  const author = data.metadata?.author?.name;
-//  const renderableVideos = data.contents?.[0]?.renderableVideos || [];
-//
-//  const qualities = [];
-//  const seen = new Set();
-//  for (const v of renderableVideos) {
-//    if (!v.renderConfig?.executionUrl) continue;
-//    const label = v.label || v.metadata?.quality_label || 'Best Quality';
-//    if (seen.has(label)) continue;
-//    seen.add(label);
-//    qualities.push({
-//      label,
-//      url: v.renderConfig.executionUrl,
-//      ext: 'mp4',
-//      resolution: v.metadata?.quality_label || label,
-//      size: v.metadata?.content_length_text || undefined,
-//    });
-//  }
-//
-//  if (qualities.length === 0) throw new Error('No qualities in RapidAPI response');
-//
-//  return { platform, title, thumbnail, author, qualities, _source: 'rapidapi' };
-//}
-
 async function tryRapidAPI(url, platform) {
   if (!RAPIDAPI_KEY) throw new Error('RAPIDAPI_KEY not set');
 
@@ -632,7 +564,6 @@ async function tryRapidAPI(url, platform) {
 
   const qualities = [];
   const seen = new Set();
-
   for (const v of renderableVideos) {
     if (!v.renderConfig?.executionUrl) continue;
     const label = v.label || v.metadata?.quality_label || 'Best Quality';
@@ -648,8 +579,10 @@ async function tryRapidAPI(url, platform) {
   }
 
   if (qualities.length === 0) throw new Error('No qualities in RapidAPI response');
+
   return { platform, title, thumbnail, author, qualities, _source: 'rapidapi' };
 }
+
 /* ═════════════════════════════════════════════════════════════════
    METHOD 2 — yt-dlp (self-hosted, always works for YT)
    ═══════════════════════════════════════════════════════════════ */
