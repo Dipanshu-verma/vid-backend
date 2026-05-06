@@ -628,101 +628,14 @@ async function tryRapidAPI(url, platform) {
   const title = data.metadata?.title || data.metadata?.author?.name || 'Video';
   const thumbnail = data.metadata?.thumbnailUrl || data.metadata?.thumbnail || '';
   const author = data.metadata?.author?.name;
-//  const renderableVideos = data.contents?.[0]?.renderableVideos || [];
-//  const audios = data.contents?.[0]?.audios || [];
-//
-//  const API = process.env.API_BASE_URL || 'http://localhost:3001';
-//  const qualities = [];
-//  const seen = new Set();
-//
-//  // ── Video qualities ──────────────────────────────────────────────────
-//  for (const v of renderableVideos) {
-//    if (!v.renderConfig?.executionUrl) continue;
-//    const label = v.label || v.metadata?.quality_label || 'Best Quality';
-//    if (seen.has(label)) continue;
-//    seen.add(label);
-//    qualities.push({
-//      label,
-//      url: v.renderConfig.executionUrl,
-//      ext: 'mp4',
-//      resolution: v.metadata?.quality_label || label,
-//      size: v.metadata?.content_length_text || undefined,
-//      isAudio: false,
-//    });
-//  }
-//
-//  // ── MP3 Audio ────────────────────────────────────────────────────────
-//
-//  // YouTube — use direct audio stream from audios array
-//// YouTube MP3 — only add if video qualities exist
-//if (platform === 'youtube' && audios.length > 0 && qualities.length > 0) {
-//  const bestAudio = audios
-//    .filter(a => a.url)
-//    .sort((a, b) => {
-//      const order = { AUDIO_QUALITY_HIGH: 3, AUDIO_QUALITY_MEDIUM: 2, AUDIO_QUALITY_LOW: 1 };
-//      return (order[b.metadata?.audio_quality] || 0) - (order[a.metadata?.audio_quality] || 0);
-//    })[0];
-//
-//  if (bestAudio) {
-//    qualities.push({
-//      label: 'MP3 Audio',
-//      url: `${API}/api/audio?videoUrl=${encodeURIComponent(bestAudio.url)}&title=${encodeURIComponent(title)}`,
-//      ext: 'mp3',
-//      resolution: 'Audio Only',
-//      size: undefined, // Remove size — causes confusion
-//      isAudio: true,
-//    });
-//  }
-//}
-//
-//// Instagram & Facebook MP3 — only add if video qualities exist
-//if ((platform === 'instagram' || platform === 'facebook')
-//    && renderableVideos.length > 0
-//    && qualities.length > 0) {
-//  const bestVideo = renderableVideos[0];
-//  if (bestVideo.renderConfig?.executionUrl) {
-//    qualities.push({
-//      label: 'MP3 Audio',
-//      url: bestVideo.renderConfig.executionUrl,
-//      ext: 'mp3',
-//      resolution: 'Audio Only',
-//      size: undefined,
-//      isAudio: true,
-//    });
-//  }
-//}
-//
-//// Instagram & Facebook MP3 — only add if video qualities exist
-//if ((platform === 'instagram' || platform === 'facebook')
-//    && renderableVideos.length > 0
-//    && qualities.length > 0) {
-//  const bestVideo = renderableVideos[0];
-//  if (bestVideo.renderConfig?.executionUrl) {
-//    qualities.push({
-//      label: 'MP3 Audio',
-//      url: bestVideo.renderConfig.executionUrl,
-//      ext: 'mp3',
-//      resolution: 'Audio Only',
-//      size: undefined,
-//      isAudio: true,
-//    });
-//  }
-//}
-//
-//  if (qualities.length === 0) throw new Error('No qualities in RapidAPI response');
-//
-//  return { platform, title, thumbnail, author, qualities, _source: 'rapidapi' };
-//}
-
-const renderableVideos = data.contents?.[0]?.renderableVideos || [];
+  const renderableVideos = data.contents?.[0]?.renderableVideos || [];
   const audios = data.contents?.[0]?.audios || [];
-  const videos = data.contents?.[0]?.videos || [];
 
   const API = process.env.API_BASE_URL || 'http://localhost:3001';
   const qualities = [];
   const seen = new Set();
 
-  // ── Renderable videos (1080p+) ───────────────────────────────────────
+  // ── Video qualities ──────────────────────────────────────────────────
   for (const v of renderableVideos) {
     if (!v.renderConfig?.executionUrl) continue;
     const label = v.label || v.metadata?.quality_label || 'Best Quality';
@@ -738,41 +651,10 @@ const renderableVideos = data.contents?.[0]?.renderableVideos || [];
     });
   }
 
-  // ── Direct videos (proxied URLs — downloadable without auth) ─────────
-  if (qualities.length === 0 && videos.length > 0) {
-    for (const v of videos) {
-      if (!v.url) continue;
-      const label = v.metadata?.quality_label || v.label || 'Best Quality';
-      if (seen.has(label)) continue;
-      seen.add(label);
-      qualities.push({
-        label,
-        url: v.url, // urlAccess=proxied means direct download works
-        ext: 'mp4',
-        resolution: label,
-        size: v.metadata?.content_length_text || undefined,
-        isAudio: false,
-      });
-    }
-  }
-
   // ── MP3 Audio ────────────────────────────────────────────────────────
 
-  // Try renderableVideos first
-  const renderableForAudio = renderableVideos.find(v => v.renderConfig?.executionUrl);
-
-  if (renderableForAudio && qualities.length > 0) {
-    qualities.push({
-      label: 'MP3 Audio',
-      url: renderableForAudio.renderConfig.executionUrl,
-      ext: 'aac',
-      resolution: 'Audio Only',
-      size: undefined,
-      isAudio: true,
-    });
-  }
-  // Fallback — use direct audio URL from audios array (proxied, downloadable)
-  else if (audios.length > 0 && qualities.length > 0) {
+  // YouTube — use direct audio stream from audios array
+  if (platform === 'youtube' && audios.length > 0) {
     const bestAudio = audios
       .filter(a => a.url)
       .sort((a, b) => {
@@ -783,19 +665,34 @@ const renderableVideos = data.contents?.[0]?.renderableVideos || [];
     if (bestAudio) {
       qualities.push({
         label: 'MP3 Audio',
-        url: bestAudio.url, // proxied URL — no auth needed
-        ext: 'aac',
-        resolution: 'Audio Only',
+        url: `${API}/api/audio?videoUrl=${encodeURIComponent(bestAudio.url)}&title=${encodeURIComponent(title)}`,
+        ext: 'mp3',
+        resolution: 'Audio Only · 192kbps',
         size: bestAudio.metadata?.content_length_text || undefined,
         isAudio: true,
       });
     }
   }
 
+  // Instagram & Facebook — extract audio from rendered video
+  if ((platform === 'instagram' || platform === 'facebook') && renderableVideos.length > 0) {
+    const bestVideo = renderableVideos[0];
+    if (bestVideo.renderConfig?.executionUrl) {
+      qualities.push({
+        label: 'MP3 Audio',
+        url: bestVideo.renderConfig.executionUrl,
+        ext: 'mp3',
+        resolution: 'Audio Only · 192kbps',
+        size: undefined,
+        isAudio: true,
+      });
+    }
+  }
+
   if (qualities.length === 0) throw new Error('No qualities in RapidAPI response');
+
   return { platform, title, thumbnail, author, qualities, _source: 'rapidapi' };
 }
-
 
 /* ═════════════════════════════════════════════════════════════════
    METHOD 2 — yt-dlp (self-hosted, always works for YT)
@@ -884,25 +781,6 @@ async function tryYtDlp(url, platform) {
       resolution: info.height ? `${info.height}p` : 'Best',
     });
   }
-   if (info.formats) {
-      const bestAudioFmt = (info.formats || [])
-        .filter(f => f.url && f.acodec && f.acodec !== 'none' && (!f.vcodec || f.vcodec === 'none'))
-        .sort((a, b) => (b.abr || b.tbr || 0) - (a.abr || a.tbr || 0))[0];
-
-      if (bestAudioFmt) {
-        const API = process.env.API_BASE_URL || 'http://localhost:3001';
-        qualities.push({
-          label: 'MP3 Audio',
-          url: `${API}/api/audio?videoUrl=${encodeURIComponent(bestAudioFmt.url)}&title=${encodeURIComponent(title)}`,
-          ext: 'mp3',
-          resolution: 'Audio Only · 192kbps',
-          size: bestAudioFmt.filesize
-            ? `${(bestAudioFmt.filesize / 1024 / 1024).toFixed(1)} MB`
-            : undefined,
-          isAudio: true,
-        });
-      }
-    }
 
   if (qualities.length === 0) throw new Error('No usable formats from yt-dlp');
 
