@@ -780,16 +780,23 @@ async function tryRapidAPI(url, platform) {
 //  }
 //}
 
-if (renderableVideos.length > 0 && qualities.length > 0 &&
-    ['youtube', 'instagram', 'facebook'].includes(platform)) {
-  qualities.push({
-    label: 'MP3 Audio',
-    url: renderableVideos[0].renderConfig.executionUrl, // Same render job as video
-    ext: 'aac',
-    resolution: 'Audio Only',
-    size: undefined,
-    isAudio: true,
-  });
+// ── MP3 Audio ────────────────────────────────────────────────────────
+if (qualities.length > 0 && ['youtube', 'instagram', 'facebook'].includes(platform)) {
+  // Find first renderableVideo that has a valid executionUrl
+  const renderableForAudio = renderableVideos.find(
+    v => v.renderConfig?.executionUrl
+  );
+
+  if (renderableForAudio) {
+    qualities.push({
+      label: 'MP3 Audio',
+      url: renderableForAudio.renderConfig.executionUrl,
+      ext: 'aac',
+      resolution: 'Audio Only',
+      size: undefined,
+      isAudio: true,
+    });
+  }
 }
 
   // Instagram & Facebook — extract audio from rendered video via ffmpeg
