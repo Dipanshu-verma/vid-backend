@@ -155,12 +155,12 @@ router.get('/proxy', async (req, res) => {
 
   try {
     const decodedUrl = decodeURIComponent(url);
-    console.log('[proxy] fetching:', decodedUrl.slice(0, 80));
+    const isAudio = filename?.endsWith('.mp3') || filename?.endsWith('.m4a');
 
     const response = await fetch(decodedUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'video/mp4,video/*,*/*',
+        'Accept': isAudio ? 'audio/*,*/*' : 'video/mp4,video/*,*/*',
         'Accept-Encoding': 'identity',
       },
       signal: AbortSignal.timeout(120000),
@@ -169,19 +169,16 @@ router.get('/proxy', async (req, res) => {
     if (!response.ok) throw new Error(`CDN returned HTTP ${response.status}`);
 
     const contentLength = response.headers.get('content-length');
-    const contentType = response.headers.get('content-type') || 'video/mp4';
+    const contentType = isAudio ? 'audio/mpeg' : 'video/mp4';
 
-    console.log(`[proxy] size: ${contentLength} type: ${contentType}`);
-
-    res.setHeader('Content-Type', 'video/mp4');
+    res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Disposition', `attachment; filename="${filename || 'video.mp4'}"`);
     if (contentLength) res.setHeader('Content-Length', contentLength);
     res.setHeader('Accept-Ranges', 'bytes');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Access-Control-Allow-Origin', '*');
 
-    // Fixed: response.body is a Web ReadableStream (Node 18+ fetch API)
-    // Must use Readable.fromWeb() to convert to Node.js stream before piping
+    const { Readable } = await import('stream');
     const nodeStream = Readable.fromWeb(response.body);
     nodeStream.pipe(res);
     nodeStream.on('error', (e) => {
@@ -194,7 +191,6 @@ router.get('/proxy', async (req, res) => {
     if (!res.headersSent) res.status(500).json({ error: e.message });
   }
 });
-
 // On-demand render for a specific video quality
 router.post('/render', async (req, res) => {
   const { hashId, quality } = req.body;
@@ -287,14 +283,21 @@ router.get('/render-status', async (req, res) => {
 });
 
 // Extract MP3 audio from any video URL via ffmpeg
-router.get('/audio', (req, res) => {
+router.get('/audio', async (req, res) => {
   const { videoUrl, title } = req.query;
-
   if (!videoUrl) return res.status(400).json({ error: 'videoUrl required' });
-  if (!existsSync(ffmpegPath)) return res.status(500).json({ error: 'ffmpeg not found' });
 
   const filename = safeFilename(title || 'audio');
-  console.log(`[audio] extracting audio: "${filename}"`);
+  const decodedUrl = decodeURIComponent(videoUrl);
+
+  // For direct audio URLs (YouTube) — just proxy directly, no ffmpeg needed
+  // Only use ffmpeg if it's a video URL that needs audio extraction
+  if (!existsSync(ffmpegPath)) {
+    // Fallback: direct proxy
+    return proxyAudio(decodedUrl, filename, res);
+  }
+
+  console.log(`[audio] extracting: "${filename}"`);
 
   res.setHeader('Content-Disposition',
     `attachment; filename="${filename}.mp3"; filename*=UTF-8''${encodeURIComponent(filename + '.mp3')}`);
@@ -304,38 +307,80 @@ router.get('/audio', (req, res) => {
 
   const reconnect = ['-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '10'];
 
+  // Try libmp3lame first, fallback to aac if not available
   const ffmpegArgs = [
     ...reconnect,
-    '-i', decodeURIComponent(videoUrl),
-    '-vn',           // Remove video
-    '-acodec', 'copy', // Copy audio as-is — no re-encoding needed
+    '-i', decodedUrl,
+    '-vn',
+    '-acodec', 'libmp3lame',
+    '-b:a', '192k',
+    '-ar', '44100',
     '-f', 'mp3',
     'pipe:1',
   ];
 
   const ffmpeg = spawn(ffmpegPath, ffmpegArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
-  ffmpeg.stdout.pipe(res);
+  let headersSent = false;
+
+  ffmpeg.stdout.on('data', (chunk) => {
+    if (!headersSent) headersSent = true;
+    res.write(chunk);
+  });
 
   ffmpeg.stderr.on('data', d => {
     const line = d.toString().trim();
-    if (line.includes('time=') || line.includes('Error')) {
-      console.log('[audio ffmpeg]', line);
+    if (line.includes('time=') || line.includes('Error') || line.includes('Unknown encoder')) {
+      console.log('[audio ffmpeg]', line.slice(0, 100));
     }
   });
 
   ffmpeg.on('error', err => {
-    console.error('[audio] error:', err.message);
+    console.error('[audio] ffmpeg error:', err.message);
     if (!res.headersSent) res.status(500).json({ error: 'ffmpeg failed' });
     else res.end();
   });
 
-  ffmpeg.on('close', code => {
-    console.log(`[audio] done code=${code}`);
-    if (!res.writableEnded) res.end();
+  ffmpeg.on('close', async (code) => {
+    console.log(`[audio] ffmpeg done code=${code}`);
+    if (code !== 0 && !headersSent) {
+      // libmp3lame failed — fallback to direct proxy
+      console.log('[audio] libmp3lame failed, falling back to proxy...');
+      if (!res.writableEnded) {
+        await proxyAudio(decodedUrl, filename, res);
+      }
+    } else {
+      if (!res.writableEnded) res.end();
+    }
   });
 
   req.on('close', () => ffmpeg.kill('SIGKILL'));
 });
+
+async function proxyAudio(url, filename, res) {
+  try {
+    const response = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': '*/*' },
+      signal: AbortSignal.timeout(60000),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    const contentLength = response.headers.get('content-length');
+    if (!res.headersSent) {
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}.mp3"`);
+      res.setHeader('Content-Type', 'audio/mpeg');
+      if (contentLength) res.setHeader('Content-Length', contentLength);
+    }
+
+    const { Readable } = await import('stream');
+    const nodeStream = Readable.fromWeb(response.body);
+    nodeStream.pipe(res);
+    nodeStream.on('error', () => res.end());
+  } catch (e) {
+    console.error('[audio proxy] error:', e.message);
+    if (!res.headersSent) res.status(500).json({ error: e.message });
+    else res.end();
+  }
+}
 
 
 // Stream video via ffmpeg

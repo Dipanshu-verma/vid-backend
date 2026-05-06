@@ -628,14 +628,101 @@ async function tryRapidAPI(url, platform) {
   const title = data.metadata?.title || data.metadata?.author?.name || 'Video';
   const thumbnail = data.metadata?.thumbnailUrl || data.metadata?.thumbnail || '';
   const author = data.metadata?.author?.name;
-  const renderableVideos = data.contents?.[0]?.renderableVideos || [];
+//  const renderableVideos = data.contents?.[0]?.renderableVideos || [];
+//  const audios = data.contents?.[0]?.audios || [];
+//
+//  const API = process.env.API_BASE_URL || 'http://localhost:3001';
+//  const qualities = [];
+//  const seen = new Set();
+//
+//  // ── Video qualities ──────────────────────────────────────────────────
+//  for (const v of renderableVideos) {
+//    if (!v.renderConfig?.executionUrl) continue;
+//    const label = v.label || v.metadata?.quality_label || 'Best Quality';
+//    if (seen.has(label)) continue;
+//    seen.add(label);
+//    qualities.push({
+//      label,
+//      url: v.renderConfig.executionUrl,
+//      ext: 'mp4',
+//      resolution: v.metadata?.quality_label || label,
+//      size: v.metadata?.content_length_text || undefined,
+//      isAudio: false,
+//    });
+//  }
+//
+//  // ── MP3 Audio ────────────────────────────────────────────────────────
+//
+//  // YouTube — use direct audio stream from audios array
+//// YouTube MP3 — only add if video qualities exist
+//if (platform === 'youtube' && audios.length > 0 && qualities.length > 0) {
+//  const bestAudio = audios
+//    .filter(a => a.url)
+//    .sort((a, b) => {
+//      const order = { AUDIO_QUALITY_HIGH: 3, AUDIO_QUALITY_MEDIUM: 2, AUDIO_QUALITY_LOW: 1 };
+//      return (order[b.metadata?.audio_quality] || 0) - (order[a.metadata?.audio_quality] || 0);
+//    })[0];
+//
+//  if (bestAudio) {
+//    qualities.push({
+//      label: 'MP3 Audio',
+//      url: `${API}/api/audio?videoUrl=${encodeURIComponent(bestAudio.url)}&title=${encodeURIComponent(title)}`,
+//      ext: 'mp3',
+//      resolution: 'Audio Only',
+//      size: undefined, // Remove size — causes confusion
+//      isAudio: true,
+//    });
+//  }
+//}
+//
+//// Instagram & Facebook MP3 — only add if video qualities exist
+//if ((platform === 'instagram' || platform === 'facebook')
+//    && renderableVideos.length > 0
+//    && qualities.length > 0) {
+//  const bestVideo = renderableVideos[0];
+//  if (bestVideo.renderConfig?.executionUrl) {
+//    qualities.push({
+//      label: 'MP3 Audio',
+//      url: bestVideo.renderConfig.executionUrl,
+//      ext: 'mp3',
+//      resolution: 'Audio Only',
+//      size: undefined,
+//      isAudio: true,
+//    });
+//  }
+//}
+//
+//// Instagram & Facebook MP3 — only add if video qualities exist
+//if ((platform === 'instagram' || platform === 'facebook')
+//    && renderableVideos.length > 0
+//    && qualities.length > 0) {
+//  const bestVideo = renderableVideos[0];
+//  if (bestVideo.renderConfig?.executionUrl) {
+//    qualities.push({
+//      label: 'MP3 Audio',
+//      url: bestVideo.renderConfig.executionUrl,
+//      ext: 'mp3',
+//      resolution: 'Audio Only',
+//      size: undefined,
+//      isAudio: true,
+//    });
+//  }
+//}
+//
+//  if (qualities.length === 0) throw new Error('No qualities in RapidAPI response');
+//
+//  return { platform, title, thumbnail, author, qualities, _source: 'rapidapi' };
+//}
+
+ const renderableVideos = data.contents?.[0]?.renderableVideos || [];
   const audios = data.contents?.[0]?.audios || [];
+  const videos = data.contents?.[0]?.videos || [];
 
   const API = process.env.API_BASE_URL || 'http://localhost:3001';
   const qualities = [];
   const seen = new Set();
 
-  // ── Video qualities ──────────────────────────────────────────────────
+  // ── Renderable videos (1080p+) ───────────────────────────────────────
   for (const v of renderableVideos) {
     if (!v.renderConfig?.executionUrl) continue;
     const label = v.label || v.metadata?.quality_label || 'Best Quality';
@@ -651,66 +738,63 @@ async function tryRapidAPI(url, platform) {
     });
   }
 
+  // ── Direct videos fallback (720p combined, if no renderableVideos) ───
+  if (qualities.length === 0) {
+    for (const v of videos) {
+      if (!v.url) continue;
+      const label = v.metadata?.quality_label || v.label || 'Best Quality';
+      if (seen.has(label)) continue;
+      seen.add(label);
+      qualities.push({
+        label,
+        url: `${API}/api/proxy?url=${encodeURIComponent(v.url)}&filename=video.mp4`,
+        ext: 'mp4',
+        resolution: label,
+        size: v.metadata?.content_length_text || undefined,
+        isAudio: false,
+      });
+    }
+  }
+
   // ── MP3 Audio ────────────────────────────────────────────────────────
 
-  // YouTube — use direct audio stream from audios array
-// YouTube MP3 — only add if video qualities exist
-if (platform === 'youtube' && audios.length > 0 && qualities.length > 0) {
-  const bestAudio = audios
-    .filter(a => a.url)
-    .sort((a, b) => {
-      const order = { AUDIO_QUALITY_HIGH: 3, AUDIO_QUALITY_MEDIUM: 2, AUDIO_QUALITY_LOW: 1 };
-      return (order[b.metadata?.audio_quality] || 0) - (order[a.metadata?.audio_quality] || 0);
-    })[0];
+  // YouTube — use direct audio URL (no ffmpeg needed!)
+  if (platform === 'youtube' && audios.length > 0 && qualities.length > 0) {
+    const bestAudio = audios
+      .filter(a => a.url)
+      .sort((a, b) => {
+        const order = { AUDIO_QUALITY_HIGH: 3, AUDIO_QUALITY_MEDIUM: 2, AUDIO_QUALITY_LOW: 1 };
+        return (order[b.metadata?.audio_quality] || 0) - (order[a.metadata?.audio_quality] || 0);
+      })[0];
 
-  if (bestAudio) {
-    qualities.push({
-      label: 'MP3 Audio',
-      url: `${API}/api/audio?videoUrl=${encodeURIComponent(bestAudio.url)}&title=${encodeURIComponent(title)}`,
-      ext: 'mp3',
-      resolution: 'Audio Only',
-      size: undefined, // Remove size — causes confusion
-      isAudio: true,
-    });
+    if (bestAudio) {
+      qualities.push({
+        label: 'MP3 Audio',
+        // ← Direct proxy — no ffmpeg, audio URL already has audio only
+        url: `${API}/api/proxy?url=${encodeURIComponent(bestAudio.url)}&filename=audio.mp3`,
+        ext: 'mp3',
+        resolution: 'Audio Only',
+        size: bestAudio.metadata?.content_length_text || undefined,
+        isAudio: true,
+      });
+    }
   }
-}
 
-// Instagram & Facebook MP3 — only add if video qualities exist
-if ((platform === 'instagram' || platform === 'facebook')
-    && renderableVideos.length > 0
-    && qualities.length > 0) {
-  const bestVideo = renderableVideos[0];
-  if (bestVideo.renderConfig?.executionUrl) {
+  // Instagram & Facebook — extract audio from rendered video via ffmpeg
+  if ((platform === 'instagram' || platform === 'facebook')
+      && renderableVideos.length > 0
+      && qualities.length > 0) {
     qualities.push({
       label: 'MP3 Audio',
-      url: bestVideo.renderConfig.executionUrl,
-      ext: 'mp3',
-      resolution: 'Audio Only',
-      size: undefined,
-      isAudio: true,
-    });
-  }
-}
-
-// Instagram & Facebook MP3 — only add if video qualities exist
-if ((platform === 'instagram' || platform === 'facebook')
-    && renderableVideos.length > 0
-    && qualities.length > 0) {
-  const bestVideo = renderableVideos[0];
-  if (bestVideo.renderConfig?.executionUrl) {
-    qualities.push({
-      label: 'MP3 Audio',
-      url: bestVideo.renderConfig.executionUrl,
+      url: renderableVideos[0].renderConfig.executionUrl,
       ext: 'mp3',
       resolution: 'Audio Only',
       size: undefined,
       isAudio: true,
     });
   }
-}
 
   if (qualities.length === 0) throw new Error('No qualities in RapidAPI response');
-
   return { platform, title, thumbnail, author, qualities, _source: 'rapidapi' };
 }
 
